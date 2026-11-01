@@ -20,7 +20,7 @@ swift test --disable-sandbox
 
 ## 非敏感验收顺序
 
-1. 点击“受控原生验收”：生产 SCStream 采集原生 NSScrollView 的 5 次120点变化，对照独立完整 NSView 渲染和宿主实际坐标；预期5接缝、首尾尺寸与每通道误差≤2。PNG/报告仅写 gitignored `artifacts/native-*`。这是 L2/L3 受控程序驱动，不能冒充 Owner 手动验收。
+1. 内置“受控原生验收”当前有已知oracle限制（见KNOWN_ISSUES TEST-03），不得把该按钮当作已通过记录。其设计为：生产 SCStream 采集原生 NSScrollView 的 5 次120点变化，对照独立完整 NSView 渲染和宿主实际坐标；目标5接缝、首尾尺寸与每通道误差≤2；本次字体oracle未满足阈值。核心证据使用Tools/NativeOracleHost.swift显示不可变PNG并用独立脚本核对。PNG/报告仅写 gitignored `artifacts/native-*`。这是 L2/L3 受控程序驱动，不能冒充 Owner 手动验收。
 2. 点“合成测试窗口”，刷新后选择该窗口→获取画面→拖选正文（排除标题栏/滚动条）→开始手动。用鼠标缓慢滚动至少3次；HUD不能抢焦点或进入图像。暂停后滚回再继续；过快丢重叠必须暂停。完成后检查首尾、合法重复行、100%预览、裁剪、PNG、复制、Finder。
 3. Safari 打开 `Fixtures/browser.html`（本地合成页面），先保存独立 canvas 真值 PNG；同样框选正文，做至少3接缝手动采集并保存。用独立 `Scripts/compare-images.swift` 按已知 canvas 起点/范围逐像素核对。禁止用生产位移或生产 crop 生成 expected。
 4. 对原生合成窗口、Safari 分别重新开始手动采集，验证3个接缝后点击“有界自动”；3秒内把鼠标放到正文，保持目标前台。确认至少3个额外接缝；点击/按键/滚轮接管、切换窗口、移出鼠标、关闭目标、resize 应立即停回手动。无进展提示“未确认尾部”，不能报成功到底。B01+B03都通过才标F06完成。
@@ -40,3 +40,14 @@ swift Scripts/compare-images.swift actual.png oracle.png x y width height
 - 不修复任意横向移动/缩放/布局变化；重新框选开始新会话。动态长图不是同一瞬间快照。用户结束不等于文档到底。
 - 8MP单帧、128MP会话、4096条带、10分钟、32次恢复；自动80步/120秒/3秒无进展。未验证Retina/多显示器/Intel时不得宣传已支持其验收。
 - 本地原始帧、私聊、窗口标题、账号、个人路径不得提交公开仓库或CI。公开夹具只有合成代码；临时条带权限0700，正常取消/对象释放清理；进程崩溃后的遗留目录需单独人工检查，不扫描删除未知目录。
+
+## 独立原生位图宿主（已用于本轮通过证据）
+
+Safari打开 `Fixtures/browser.html`，点击“保存独立真值PNG”。这个PNG是测试输入，不是生产拼接导出的expected。
+
+```sh
+bash Scripts/build-oracle-host.sh /absolute/path/browser-oracle.png
+open artifacts/native-oracle-host/NativeOracleHost.app
+```
+
+宿主只有NSScrollView和不可变位图渲染，不采集屏幕、不注入输入、不需要采集/辅助功能权限。标题显示独立实际scroll位置。由交付ScrollCapture选择该窗口、框选正文并真实滚动，最终PNG用独立比较脚本核对；不共享生产配准、账本或crop代码。

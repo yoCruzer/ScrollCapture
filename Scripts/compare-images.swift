@@ -6,7 +6,8 @@ import CryptoKit
 // Usage: swift Scripts/compare-images.swift actual.png expected.png x y width height
 let args = CommandLine.arguments
 guard args.count == 7, let x=Int(args[3]), let y=Int(args[4]), let w=Int(args[5]), let h=Int(args[6]),
-      let actual=NSBitmapImageRep(contentsOfFile:args[1]), let expected=NSBitmapImageRep(contentsOfFile:args[2]),
+      let actual=NSBitmapImageRep(data:try Data(contentsOf:URL(fileURLWithPath:args[1]))),
+      let expected=NSBitmapImageRep(data:try Data(contentsOf:URL(fileURLWithPath:args[2]))),
       actual.pixelsWide == w, actual.pixelsHigh == h, x>=0, y>=0, w>0, h>0,
       x+w<=expected.pixelsWide, y+h<=expected.pixelsHigh else { fatalError("usage/dimensions mismatch") }
 var total=0.0, maximum=0.0, bad=0, badRows=0

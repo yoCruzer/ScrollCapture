@@ -1,6 +1,6 @@
 # 架构与快速实验
 
-状态：设计基线，尚未实现/构建/真实 Mac 验证。
+状态：设计基线对应的原生候选已实现；具体实现取舍见 DECISIONS D15–D19，准确源码与实际证据只看 STATUS。
 
 ## 技术方向
 Swift 6；SwiftUI + AppKit；ScreenCaptureKit 单帧与 SCStream 连续采集；Vision Translational Registration 只作为位移候选；自有像素重叠验证决定是否接受；CGEvent 仅用于可选有界自动滚动；Accessibility 仅辅助，不是统一真值。首轮不依赖 OpenCV、云服务、Apple Intelligence 或 OCR。
@@ -15,7 +15,7 @@ CaptureCoordinator（会话/状态）；SelectionOverlay（选区/HUD）；Permi
 分别表示桌面全局坐标、显示器本地点坐标、捕获 bitmap 像素坐标、重建内容相对坐标。不得假设 Retina 恒为 2 或屏幕点与像素一一对应；用真实 CGImage/CVPixelBuffer 和 ScreenCaptureKit 元数据核验。选区吸附后的边界在确认前展示。候选和累计位置可浮点，按绝对累计边界取整，避免逐帧误差。
 
 ## 采集与配准
-SCStream 帧到达不代表目标内容加载完成。队列有界、有背压；丢帧后必须重新证明重叠。Vision 产生多个候选，独立检查有效重叠、纹理、分散区域共识、最佳/次佳差距、颜色残差、尺寸/scale 一致性。confidence 不是概率。无唯一解时暂停；匹配失败不得 overlap=0 后整帧追加。
+SCStream 帧到达不代表目标内容加载完成。队列有界、有背压；丢帧后必须重新证明重叠。首轮采用全可见重叠范围的整数候选穷举（Vision候选后置），独立检查有效重叠、纹理、分散区域共识、最佳/次佳差距、颜色残差、尺寸/scale 一致性。confidence 不是概率。无唯一解时暂停；匹配失败不得 overlap=0 后整帧追加。
 
 固定栏分别建 registrationMask 与 validContentRegion。排除固定像素参与匹配，不证明其遮挡正文已经被捕获。逆滚只更新当前位置，不减少已确认最远范围；恢复失败保留可信前缀。
 
