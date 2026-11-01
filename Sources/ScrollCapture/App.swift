@@ -7,13 +7,15 @@ struct ScrollCaptureApp: App {
     var body: some Scene {
         Window("ScrollCapture", id: "main") {
             MainView(model: model).frame(minWidth: 860, minHeight: 650)
-                .onChange(of: model.selected) { model.selectionChanged() }
+                .onAppear { model.configureShortcut() }
+                .onChange(of: model.shortcut) { model.configureShortcut() }
         }
         MenuBarExtra("ScrollCapture", systemImage: "rectangle.dashed.badge.record") {
             Button("显示 ScrollCapture") { model.showMain() }
             Button("暂停 / 继续") { model.togglePause() }.disabled(!model.running)
             Button("完成") { Task { await model.finish() } }.disabled(!model.running)
             Button("取消") { model.cancel() }.disabled(!model.running)
+            Button("有界自动（先手动验证3个接缝）") { model.startAutomatic() }.disabled(!model.running || model.seams < 3)
             Divider()
             Button("退出") { model.cancel(); NSApp.terminate(nil) }.keyboardShortcut("q")
         }
@@ -32,9 +34,10 @@ struct MainView: View {
                 }
                 Spacer()
                 Button("合成测试窗口") { FixtureHost.shared.show() }.disabled(model.running)
+                Button("受控原生验收") { Task { await model.nativeGate() } }.disabled(model.running || model.busy)
             }
             HStack {
-                Picker("窗口", selection: $model.selected) {
+                Picker("窗口", selection: Binding(get:{model.selected},set:{model.selectWindow($0)})) {
                     Text("请选择").tag(UInt32(0))
                     ForEach(model.windows, id: \.windowID) { w in Text("\(w.owningApplication?.applicationName ?? "App") — \(w.title ?? "窗口")").tag(w.windowID) }
                 }.disabled(model.busy || model.running)
@@ -55,11 +58,27 @@ struct MainView: View {
                 .foregroundStyle(model.unresolved ? .orange : .primary)
             if model.running { Text("已确认 \(model.confirmedHeight) px · \(model.seams) 个接缝 · 只扩展已验证的连续覆盖").font(.headline) }
             HStack {
-                Button("保存 PNG / 分片") { Task { await model.save() } }.disabled(model.bitmap == nil || model.busy || model.running)
+                Button("保存 PNG / 分片") { model.beginSave() }.disabled(model.bitmap == nil || model.busy || model.running)
+                if model.exporting { Button("取消导出") { model.cancelExport() } }
                 Button("复制完整图") { Task { await model.copy() } }.disabled(model.bitmap == nil || model.busy || model.running)
                 Toggle("100%", isOn: $actualSize).toggleStyle(.button)
                 if let r = model.region { Text("选区 \(Int(r.minX)),\(Int(r.minY)) · \(Int(r.width))×\(Int(r.height)) px").font(.caption.monospaced()) }
                 Button("选整个窗口") { model.region = nil }.disabled(model.running || model.busy)
+            }
+            HStack {
+                Picker("唤起快捷键",selection:$model.shortcut) {
+                    Text("⌃⌥⌘S").tag(0); Text("⌃⌥⌘D").tag(1); Text("关闭").tag(2)
+                }.frame(width:200)
+                Text("重复整屏 / 超长周期 / 亚像素重采样无法保证定位；请缓慢滚动并复核首尾。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if model.bitmap != nil && !model.selecting && !model.running {
+                HStack {
+                    Text("裁剪顶部 / 底部（像素）")
+                    TextField("顶部",value:$model.trimTop,format:.number).frame(width:70)
+                    TextField("底部",value:$model.trimBottom,format:.number).frame(width:70)
+                    Button("应用裁剪") { Task { await model.trimResult() } }.disabled(model.busy)
+                }
             }
             if let bitmap = model.bitmap {
                 if model.selecting && !actualSize {

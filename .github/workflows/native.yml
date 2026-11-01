@@ -1,0 +1,22 @@
+name: Native macOS checks
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-and-build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version && sw_vers
+      - name: Core regression
+        run: swift test --disable-sandbox
+      - name: App bundle
+        run: bash Scripts/build-app.sh
+      - name: Verify identity
+        run: codesign --verify --strict build/ScrollCapture.app && cat build/ScrollCapture.app/Contents/Resources/source-sha.txt
+      # Hosted CI is never counted as ScreenCaptureKit/TCC/GUI evidence.

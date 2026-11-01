@@ -80,10 +80,12 @@ public actor CaptureSession {
 
     /// A new directory is committed with a same-volume rename only after every part is encoded.
     /// Existing files/folders are never replaced. Failure removes only our unique staging directory.
-    public func exportParts(parent: URL, name: String, partial: Bool, partPixels: Int = 8_000_000) async throws -> URL {
+    public func exportParts(parent: URL, name: String, partial: Bool, partPixels: Int = 8_000_000, range: Range<Int>? = nil) async throws -> URL {
         guard sealed, !closed, width > 0, height > 0, partPixels >= width,
               !name.isEmpty, !name.contains("/"), name != ".", name != ".." else { throw CaptureError.storage }
         let fm = FileManager.default
+        let range = range ?? 0..<height
+        guard range.lowerBound >= 0, range.upperBound <= height, !range.isEmpty else { throw CaptureError.invalidImage }
         let destination = parent.appendingPathComponent(name, isDirectory: true)
         guard !fm.fileExists(atPath: destination.path) else { throw CaptureError.storage }
         let stage = parent.appendingPathComponent(".ScrollCapture-export-\(UUID().uuidString)", isDirectory: true)
@@ -91,17 +93,17 @@ public actor CaptureSession {
         defer { try? fm.removeItem(at: stage) }
         let partHeight = min(16_384, partPixels / width)
         var manifest: [[String: Any]] = []
-        for y in stride(from: 0, to: height, by: partHeight) {
+        for y in stride(from: range.lowerBound, to: range.upperBound, by: partHeight) {
             await Task.yield()
             try Task.checkCancellation()
             guard !closed else { throw CancellationError() }
-            let h = min(partHeight,height-y), filename = String(format:"part-%04d.png",manifest.count+1)
+            let h = min(partHeight,range.upperBound-y), filename = String(format:"part-%04d.png",manifest.count+1)
             let raster = try read(y:y,height:h)
             let encoded = try raster.png()
             try encoded.write(to:stage.appendingPathComponent(filename),options:.atomic)
-            manifest.append(["file":filename,"y":y,"height":h,"width":width])
+            manifest.append(["file":filename,"y":y-range.lowerBound,"height":h,"width":width])
         }
-        let report: [String:Any] = ["schema":1,"width":width,"height":height,"integrity":partial ? "partial-unconfirmed-tail" : "continuous-user-ended",
+        let report: [String:Any] = ["schema":1,"width":width,"height":range.count,"sourceStartY":range.lowerBound,"integrity":partial ? "partial-unconfirmed-tail" : "continuous-user-ended",
                                   "documentEndConfirmed":false,"parts":manifest]
         try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:stage.appendingPathComponent("manifest.json"),options:.atomic)
         await Task.yield()

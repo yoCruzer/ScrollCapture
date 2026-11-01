@@ -27,6 +27,9 @@ struct HUDView: View {
                 Button(model.paused ? "回滚后继续" : "暂停") { model.togglePause() }
                 Button("完成") { Task { await model.finish() } }
                 Button("取消") { model.cancel() }
+                Button(model.automatic ? "回手动" : "有界自动") {
+                    if model.automatic { model.stopAutomatic() } else { model.startAutomatic() }
+                }.disabled(model.paused || model.seams < 3)
             }
         }.padding(12).frame(width: 356)
     }

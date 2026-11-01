@@ -15,8 +15,8 @@
 | S0 | 实现/实采完成，待独立 review | release .app、codesign verify、GUI、ScreenCaptureKit 520×468 合成窗口、PNG 保存 |
 | S1 | 实现完成 / 真实多视口待验 | 5 项配准定向测试通过；新构建 TCC 拒绝 |
 | S2 | 实现/定向测试完成，真实补验待授权 | 8项恢复/分片测试；周期别名P1修复 |
-| S3 / F06 | IN_PROGRESS | 尚未完成真实自动验收 |
-| S4 | NOT_STARTED | 无 |
+| S3 / F06 | 实现完成 / F06验收未完成 | 3项自动策略测试；B01/B03 NOT_RUN |
+| S4 | IN_PROGRESS | 独立最终审查与集中真机验证 |
 
 测试：`swift test --disable-sandbox`，2 tests / 0 failures（PNG 往返方向、无效输入）。首次沙箱内 dSYM 生成被拒，提权后构建通过。初次 TCC 拒绝保留为失败记录；用户授权重启后实际采集/保存成功。产品 SHA 将在下一个检查点绑定；不是文档 SHA 验收。
 
