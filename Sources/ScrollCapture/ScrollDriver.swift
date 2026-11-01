@@ -37,7 +37,7 @@ final class ScrollDriver {
             // User positions the pointer; the app never moves it.
             do { try await Task.sleep(for:.seconds(3)) } catch { return }
             guard let self, token == self.id else { return }
-            var policy = AutoPolicy(now:ProcessInfo.processInfo.systemUptime)
+            var policy = AutoPolicy(now:CMClockGetTime(CMClockGetHostTimeClock()).seconds)
             while !Task.isCancelled, token == self.id {
                 let state = progress()
                 guard state.valid, Self.permission() else { self.stop(); stopped("自动控制已停止，请检查采集状态和辅助功能权限。"); return }
@@ -45,7 +45,7 @@ final class ScrollDriver {
                     let targets = try await ScreenSource.windows()
                     guard token == self.id, !Task.isCancelled else { return }
                     let safe = Self.safeTarget(window:window,targets:targets,region:region,scale:scale)
-                    switch policy.evaluate(now:ProcessInfo.processInfo.systemUptime,height:state.height,acceptedAt:state.time,safeTarget:safe) {
+                    switch policy.evaluate(now:CMClockGetTime(CMClockGetHostTimeClock()).seconds,height:state.height,acceptedAt:state.time,safeTarget:safe) {
                     case .wait: break
                     case .stop(let reason): self.stop(); stopped("\(reason)；已切回手动。"); return
                     case .send:
@@ -74,7 +74,8 @@ final class ScrollDriver {
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] else { return false }
         // Window IDs, not titles: reject another window of the same process under the pointer.
         for info in list {
-            guard (info[kCGWindowLayer as String] as? Int) == 0,
+            // Floating panels/menus above the target can intercept input too; do not skip layers.
+            guard (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.01,
                   let bounds = info[kCGWindowBounds as String] as? NSDictionary,
                   let frame = CGRect(dictionaryRepresentation:bounds), frame.contains(cursor) else { continue }
             return (info[kCGWindowNumber as String] as? UInt32) == window.windowID

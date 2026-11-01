@@ -24,8 +24,8 @@ struct HUDView: View {
             Text("已确认 \(model.confirmedHeight) px · \(model.seams) 个接缝").bold()
             Text(model.status).font(.caption).lineLimit(2)
             HStack {
-                Button(model.paused ? "回滚后继续" : "暂停") { model.togglePause() }
-                Button("完成") { Task { await model.finish() } }
+                Button(model.paused ? "回滚后继续" : "暂停") { model.togglePause() }.disabled(model.gateRunning)
+                Button("完成") { Task { await model.finish() } }.disabled(model.gateRunning)
                 Button("取消") { model.cancel() }
                 Button(model.automatic ? "回手动" : "有界自动") {
                     if model.automatic { model.stopAutomatic() } else { model.startAutomatic() }

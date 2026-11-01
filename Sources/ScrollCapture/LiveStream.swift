@@ -1,5 +1,5 @@
 import AppKit
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 import CoreImage
 import CaptureCore
 
@@ -23,8 +23,11 @@ final class StreamReceiver: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         guard type == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let info = attachments.first,
-              let rawStatus = info[.status] as? Int, SCFrameStatus(rawValue: rawStatus) == .complete,
-              let pixelBuffer = sampleBuffer.imageBuffer else { return }
+              let rawStatus = info[.status] as? Int, let status = SCFrameStatus(rawValue:rawStatus) else { return }
+        if status == .idle || status == .started { return }
+        guard status == .complete, let pixelBuffer = sampleBuffer.imageBuffer else {
+            continuation.finish(throwing:CaptureError.geometryChanged); return
+        }
         do {
             let rect: CGRect?
             if let value = info[.contentRect] as? CGRect { rect = value }
@@ -48,6 +51,8 @@ final class LiveStream {
     let frames: AsyncThrowingStream<CapturedFrame, Error>
     private let receiver: StreamReceiver
     private let stream: SCStream
+    private var startTask: Task<Void,Error>?
+    private var stopping = false
     init(window: SCWindow) throws {
         let pair = AsyncThrowingStream<CapturedFrame, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
         frames = pair.stream; receiver = StreamReceiver(pair.continuation)
@@ -58,6 +63,24 @@ final class LiveStream {
         stream = SCStream(filter: filter, configuration: config, delegate: receiver)
         try stream.addStreamOutput(receiver, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.yocruzer.ScrollCapture.frames"))
     }
-    func start() async throws { try await stream.startCapture() }
-    func stop() async { receiver.continuation.finish(); try? await stream.stopCapture() }
+    func start() async throws {
+        if let startTask { return try await startTask.value }
+        let task = Task { @MainActor in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void,Error>) in
+                stream.startCapture { error in
+                    if let error { continuation.resume(throwing:error) } else { continuation.resume() }
+                }
+            }
+        }
+        startTask = task; try await task.value
+    }
+    func stop() async {
+        receiver.continuation.finish()
+        // A cancelled preparation cannot start a capture after its stop has already returned.
+        if let startTask { _ = try? await startTask.value }
+        guard !stopping else { return }; stopping = true
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void,Never>) in
+            stream.stopCapture { _ in continuation.resume() }
+        }
+    }
 }

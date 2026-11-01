@@ -4,6 +4,22 @@ import ImageIO
 
 final class RecoveryExportTests: XCTestCase, @unchecked Sendable {
     let fixture = RegistrationTests()
+    func testSparseMarkerCannotHideAlternativeFullResidualMatches() throws {
+        func frame(_ origin: Int) throws -> Raster {
+            var pixels: [UInt8] = []
+            for y in origin..<(origin+160) {
+                for x in 0..<1024 {
+                    let row = x < 7 ? y : y % 80
+                    let v = (row*1097+x*733+17) &* 31
+                    pixels += [UInt8(truncatingIfNeeded:v),UInt8(truncatingIfNeeded:v>>8),UInt8(truncatingIfNeeded:v>>16),255]
+                }
+            }
+            return try Raster(width:1024,height:160,bytes:pixels)
+        }
+        let a = try frame(0), b = try frame(20)
+        // Different sampled ranking cannot turn a second fully acceptable displacement into uniqueness.
+        XCTAssertThrowsError(try Registration.estimate(previous:a,next:b))
+    }
     func testLongPeriodOutsideCommitSearchCannotAliasGapAsSmallStep() async throws {
         func periodic(_ start: Int) throws -> Raster {
             var bytes: [UInt8] = []
@@ -78,6 +94,18 @@ final class RecoveryExportTests: XCTestCase, @unchecked Sendable {
         do { _ = try await s.exportParts(parent:root.appendingPathComponent("absent"),name:"failure",partial:false); XCTFail() } catch {}
         let retry = try await s.exportParts(parent:root,name:"retry",partial:false,partPixels:64*100)
         XCTAssertTrue(FileManager.default.fileExists(atPath:retry.appendingPathComponent("part-0005.png").path))
+        let trimmed = try await s.exportParts(parent:root,name:"trimmed",partial:false,partPixels:64*100,range:17..<331)
+        let trimmedManifest = try JSONSerialization.jsonObject(with:Data(contentsOf:trimmed.appendingPathComponent("manifest.json"))) as! [String:Any]
+        XCTAssertEqual(trimmedManifest["sourceStartY"] as? Int,17)
+        XCTAssertEqual(trimmedManifest["height"] as? Int,314)
+        let trimmedParts = trimmedManifest["parts"] as! [[String:Any]]
+        var trimmedBytes: [UInt8] = []
+        for part in trimmedParts {
+            let data = try Data(contentsOf:trimmed.appendingPathComponent(part["file"] as! String))
+            let source = CGImageSourceCreateWithData(data as CFData,nil)!
+            trimmedBytes += try Raster(image:CGImageSourceCreateImageAtIndex(source,0,nil)!).bytes
+        }
+        XCTAssertEqual(trimmedBytes,try fixture.viewport(at:17,height:314).bytes)
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath:root.path).contains { $0.hasPrefix(".ScrollCapture-export-") })
     }
     func testExportCancellationLeavesNoDestinationOrStage() async throws {

@@ -1,5 +1,6 @@
 import AppKit
-import ScreenCaptureKit
+// SDK 15 predates Sendable annotations. All window/filter access stays on MainActor.
+@preconcurrency import ScreenCaptureKit
 import CaptureCore
 
 @MainActor

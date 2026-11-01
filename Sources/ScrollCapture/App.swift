@@ -3,11 +3,12 @@ import SwiftUI
 
 @main
 struct ScrollCaptureApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
     var body: some Scene {
         Window("ScrollCapture", id: "main") {
             MainView(model: model).frame(minWidth: 860, minHeight: 650)
-                .onAppear { model.configureShortcut() }
+                .onAppear { delegate.model = model; model.configureShortcut() }
                 .onChange(of: model.shortcut) { model.configureShortcut() }
         }
         MenuBarExtra("ScrollCapture", systemImage: "rectangle.dashed.badge.record") {
@@ -17,7 +18,7 @@ struct ScrollCaptureApp: App {
             Button("取消") { model.cancel() }.disabled(!model.running)
             Button("有界自动（先手动验证3个接缝）") { model.startAutomatic() }.disabled(!model.running || model.seams < 3)
             Divider()
-            Button("退出") { model.cancel(); NSApp.terminate(nil) }.keyboardShortcut("q")
+            Button("退出") { NSApp.terminate(nil) }.keyboardShortcut("q")
         }
     }
 }
@@ -34,14 +35,14 @@ struct MainView: View {
                 }
                 Spacer()
                 Button("合成测试窗口") { FixtureHost.shared.show() }.disabled(model.running)
-                Button("受控原生验收") { Task { await model.nativeGate() } }.disabled(model.running || model.busy)
+                Button("受控原生验收") { Task { await model.nativeGate() } }.disabled(model.running || model.busy || model.gateRunning)
             }
             HStack {
                 Picker("窗口", selection: Binding(get:{model.selected},set:{model.selectWindow($0)})) {
                     Text("请选择").tag(UInt32(0))
                     ForEach(model.windows, id: \.windowID) { w in Text("\(w.owningApplication?.applicationName ?? "App") — \(w.title ?? "窗口")").tag(w.windowID) }
-                }.disabled(model.busy || model.running)
-                Button("刷新 / 检查权限") { Task { await model.refresh() } }.disabled(model.busy || model.running)
+                }.disabled(model.busy || model.running || model.gateRunning)
+                Button("刷新 / 检查权限") { Task { await model.refresh() } }.disabled(model.busy || model.running || model.gateRunning)
             }
             HStack {
                 Button("获取窗口画面") { Task { await model.capture() } }.disabled(model.selected == 0 || model.busy || model.running)

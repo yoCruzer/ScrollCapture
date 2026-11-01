@@ -32,3 +32,9 @@
 - `swift test --disable-sandbox --filter AutoPolicyTests`：3/3，通过真实已提交像素/时间、无进展不等于到底、失焦立即停、步数/时长边界。真实B01/B03尚待最终候选授权，F06仍未完成。
 - 可配置Carbon全局唤起快捷键、100%预览、上下像素裁剪、导出取消入口、原生受控验收按钮（生产stream/账本 vs 独立完整NSView渲染与宿主scroll坐标）。
 - 构建前后比较源码hash清单及HEAD，避免编译中源码变化产生错误溯源。远端macOS CI在稳定检查点验证核心和.app构建，不充当GUI/TCC证据。
+
+## 2026-11-02 — S4 审查闭环（候选冻结前）
+- 独立审查c658504：自动用提交时钟误认旧帧、忽略浮层、受控验收流程跨会话污染、退出未等待原始条带清理。均已修复：host采集时钟、全部非透明窗口层、验收独占gateID/跨await检查/绑定engine、terminateLater等待会话和导出清理。
+- 独立稀疏唯一标志probe指出采样次佳与完整残差集合不同；最终对所有可见竞争位移跑同一完整残差，任何替代解通过即暂停，并新增反例。
+- CI run 41325743879 在 macOS15.8.2 / Xcode16.4 / Swift6.1.2 编译失败：旧SDK没有SCK Sendable标注。采用SDK兼容preconcurrency导入及主线程completion bridge，等待start完成后stop，继续新检查点验证；原失败不删除。
+- 新增纯合成Safari夹具与独立NSBitmapImageRep像素比较脚本，不导入生产CaptureCore。构建与集中Owner步骤写入BUILD_AND_VALIDATE。

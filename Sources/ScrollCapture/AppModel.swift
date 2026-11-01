@@ -23,6 +23,8 @@ final class AppModel: ObservableObject {
     @Published var trimTop = 0
     @Published var trimBottom = 0
     @Published var exporting = false
+    @Published var gateRunning = false
+    var gateID = UUID()
     private var exportRange: Range<Int>?
     private var exportTask: Task<Void,Never>?
     private(set) var snapshot: Raster?
@@ -30,7 +32,8 @@ final class AppModel: ObservableObject {
     private var generation = UUID()
     private var permit = CommitPermit()
     private var attempt = 0
-    private var session: CaptureSession?
+    private(set) var session: CaptureSession?
+    private var cleanupTask: Task<Void,Never>?
     private var source: LiveStream?
     private var captureTask: Task<Void,Never>?
     private let hud = CaptureHUD()
@@ -54,7 +57,7 @@ final class AppModel: ObservableObject {
         guard !running else { return }
         generation = UUID(); busy = false; snapshot = nil; snapshotWindow = nil; region = nil; selecting = false
     }
-    func selectWindow(_ id: UInt32) { guard !busy, !running else { return }; selected = id; selectionChanged() }
+    func selectWindow(_ id: UInt32, fromGate: Bool = false) { guard !busy, !running, !gateRunning || fromGate else { return }; selected = id; selectionChanged() }
     func configureShortcut() {
         hotKey.action = { [weak self] in self?.showMain() }
         let codes: [UInt32?] = [UInt32(kVK_ANSI_S),UInt32(kVK_ANSI_D),nil]
@@ -62,13 +65,8 @@ final class AppModel: ObservableObject {
         if !hotKey.configure(keyCode:codes[shortcut]) { status = "快捷键注册失败，请选择另一个组合。" }
         UserDefaults.standard.set(shortcut,forKey:"shortcut")
     }
-    func fullResultForGate() async throws -> Raster? {
-        guard let session else { return bitmap }
-        let size = await session.dimensions()
-        return try await session.read(y:0,height:size.height)
-    }
     func refresh() async {
-        guard !busy, !running else { return }
+        guard !busy, !running, !gateRunning else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -77,8 +75,8 @@ final class AppModel: ObservableObject {
             windows = result; status = "选择窗口，获取画面；再框选可滚动的正文。"
         } catch { if token == generation { status = "需要屏幕录制权限。请在系统设置中允许 ScrollCapture，然后退出并重新打开。" } }
     }
-    func capture() async {
-        guard !busy, !running, let window = windows.first(where: { $0.windowID == selected }) else { return }
+    func capture(fromGate: Bool = false) async {
+        guard !busy, !running, !gateRunning || fromGate, let window = windows.first(where: { $0.windowID == selected }) else { return }
         let token = generation, target = selected; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -94,12 +92,12 @@ final class AppModel: ObservableObject {
         return try image.crop(x: Int(region.minX), y: Int(region.minY), width: Int(region.width), height: Int(region.height))
     }
     func regionScreenshot() {
-        guard !busy, !running, let snapshot else { return }
+        guard !busy, !running, !gateRunning, let snapshot else { return }
         do { bitmap = try cropped(snapshot,region:region); session = nil; selecting = false; status = "区域截图完成" }
         catch { status = error.localizedDescription }
     }
-    func start() async {
-        guard !busy, !running, let snapshotWindow, let snapshot, snapshotWindow.windowID == selected else { return }
+    func start(fromGate: Bool = false) async {
+        guard !busy, !running, !gateRunning || fromGate, let snapshotWindow, let snapshot, snapshotWindow.windowID == selected else { return }
         let token = UUID(); generation = token; busy = true
         permit.invalidate(); permit = CommitPermit(); attempt += 1; recoveryAttempts = 0
         defer { if token == generation { busy = false } }
@@ -154,6 +152,10 @@ final class AppModel: ObservableObject {
                             self.status = "处理队列丢帧，连续性需要重新确认；请回滚补采后继续。"
                             continue
                         }
+                        if CMClockGetTime(CMClockGetHostTimeClock()).seconds - frame.time > 1.5 {
+                            self.paused = true; self.unresolved = true; self.stopAutomatic()
+                            self.status = "画面已过期，已暂停；请回滚到可信位置再继续。"; continue
+                        }
                         let frameAttempt = self.attempt, framePermit = self.permit
                         do {
                             let targets = try await ScreenSource.windows()
@@ -170,7 +172,9 @@ final class AppModel: ObservableObject {
                             guard token == self.generation, !Task.isCancelled else { break }
                             guard frameAttempt == self.attempt, !self.paused else { continue }
                             self.confirmedHeight = coverage.height; self.seams = coverage.seams
-                            if coverage.appended > 0 { self.acceptedAt = ProcessInfo.processInfo.systemUptime }
+                            // SCK presentation timestamps use the host monotonic clock; a pre-input
+                            // frame processed late must not authorize the next automatic input.
+                            if coverage.appended > 0 { self.acceptedAt = frame.time }
                             self.bitmap = cropped
                             self.unresolved = false
                             self.status = coverage.appended > 0 ? "已验证新增 \(coverage.appended) px；继续缓慢滚动。" : "画面已定位，尚无新增覆盖；静止不表示到底。"
@@ -190,7 +194,7 @@ final class AppModel: ObservableObject {
         }
     }
     func togglePause() {
-        guard running else { return }
+        guard running, !gateRunning else { return }
         stopAutomatic()
         permit.invalidate(); permit = CommitPermit(); attempt += 1
         if paused {
@@ -200,8 +204,8 @@ final class AppModel: ObservableObject {
         paused.toggle()
         status = paused ? "已暂停；继续时仍须与已确认画面重叠。" : "请缓慢回滚到已确认内容；可靠匹配后自动恢复。"
     }
-    func finish() async {
-        guard running, let session else { return }
+    func finish(fromGate: Bool = false) async {
+        guard running, !gateRunning || fromGate, let session else { return }
         stopAutomatic()
         let token = UUID(); generation = token; running = false; busy = true
         permit.invalidate(); watchdog?.cancel(); watchdog = nil
@@ -221,6 +225,7 @@ final class AppModel: ObservableObject {
         showMain()
     }
     func cancel() {
+        gateID = UUID(); gateRunning = false
         exportTask?.cancel()
         stopAutomatic()
         generation = UUID(); captureTask?.cancel(); captureTask = nil
@@ -228,13 +233,22 @@ final class AppModel: ObservableObject {
         let oldSource = source, oldSession = session
         source = nil; session = nil; running = false; busy = false; paused = false; hud.close()
         bitmap = nil; snapshot = nil; snapshotWindow = nil; selecting = false
-        status = "已取消，临时捕获已释放。"
-        Task { await oldSource?.stop(); await oldSession?.cancel() }
+        status = "已取消，正在释放临时捕获。"
+        let token = generation, priorCleanup = cleanupTask
+        cleanupTask = Task {
+            await oldSession?.cancel(); await oldSource?.stop(); await priorCleanup?.value
+            if token == generation { status = "已取消，临时捕获清理已完成。" }
+        }
         showMain()
+    }
+    func shutdown() async {
+        cancel()
+        await exportTask?.value
+        await cleanupTask?.value
     }
     func stopAutomatic() { scrollDriver.stop(); automatic = false }
     func trimResult() async {
-        guard !busy, !running, !selecting, let bitmap else { return }
+        guard !busy, !running, !selecting, !gateRunning, let bitmap else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -255,7 +269,7 @@ final class AppModel: ObservableObject {
         } catch { if token == generation { status = error.localizedDescription } }
     }
     func startAutomatic() {
-        guard running, !paused, !automatic, seams >= 3, let activeWindow, let activeRegion else {
+        guard running, !paused, !automatic, !gateRunning, seams >= 3, let activeWindow, let activeRegion else {
             status = "先在当前正文手动验证至少 3 个接缝，再启用有界自动。"; return
         }
         guard ScrollDriver.permission() else {
@@ -273,7 +287,7 @@ final class AppModel: ObservableObject {
         })
     }
     func beginSave() {
-        guard !busy, !running, !exporting else { return }
+        guard !busy, !running, !exporting, !gateRunning else { return }
         exporting = true
         exportTask = Task { [weak self] in
             guard let self else { return }
@@ -316,7 +330,7 @@ final class AppModel: ObservableObject {
         catch { if token == generation { status = "保存失败，结果保留，可重试：\(error.localizedDescription)" } }
     }
     func copy() async {
-        guard !busy, !running, let bitmap else { return }
+        guard !busy, !running, !gateRunning, let bitmap else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {

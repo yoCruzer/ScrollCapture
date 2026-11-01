@@ -2,6 +2,12 @@ import XCTest
 @testable import CaptureCore
 
 final class RegistrationTests: XCTestCase, @unchecked Sendable {
+    func testBoundedHDSearch() throws {
+        let a = try viewport(at:0,height:720,width:1280), b = try viewport(at:240,height:720,width:1280)
+        let start = ContinuousClock.now
+        XCTAssertEqual(try Registration.estimate(previous:a,next:b).dy,240)
+        print("HD_SEARCH_1280x720 elapsed=\(start.duration(to:.now))")
+    }
     // Independent coordinate oracle: each world row is generated directly, never by production crop.
     func viewport(at y: Int, height: Int = 160, width: Int = 64, periodic: Bool = false) throws -> Raster {
         var bytes: [UInt8] = []

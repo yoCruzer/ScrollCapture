@@ -32,6 +32,14 @@ public enum Registration {
         guard abs(best.dy) <= a.height * 2 / 3 else { throw CaptureError.noOverlap }
         let aStart = max(0,best.dy), bStart = max(0,-best.dy)
         try validate(a, y: aStart, b, y: bStart, rows: a.height - abs(best.dy))
+        // Sampling cannot prove exclusion: a narrow unique marker can be oversampled or missed.
+        // Reject if ANY other observable displacement passes the same independent full validator.
+        // Most alternatives stop at the first mismatching row; periodic/blank cases stop on a tie.
+        for other in candidates.dropFirst() {
+            if (try? validate(a,y:max(0,other.dy),b,y:max(0,-other.dy),rows:a.height-abs(other.dy))) != nil {
+                throw CaptureError.ambiguous
+            }
+        }
         return Motion(dy: best.dy, error: best.score, runnerUp: runner)
     }
 
