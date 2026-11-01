@@ -4,7 +4,7 @@
 
 ```text
 /goal
-请在 https://github.com/yoCruzer/ScrollCapture 开始原生 macOS 截图与滚动截图工具的第一轮完整开发。
+请在 https://github.com/yoCruzer/ScrollCapture 开始原生 macOS 截图与滚动截图工具的第一轮完整开发。当前完整启动文档位于 docs/initial-project-plan 分支和 Draft PR #1，main 尚未包含这些文件；先 fetch 并读取该分支的文档，再以其 HEAD 为基础创建 codex/scroll-capture-v1，避免从空 main 开始。保留 PR #1，不要覆盖或关闭。
 
 先读 AGENTS.md、README.md、Docs/PRODUCT_REQUIREMENTS.md、Docs/EXECUTION_PLAN.md、Docs/STATUS.md；按需读架构、验收、研究与 Chrome V2 经验。核对远端、HEAD、工作区、Xcode/Swift/SDK；未知改动必须保留，必要时用独立 worktree。
 
