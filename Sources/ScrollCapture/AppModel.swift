@@ -20,12 +20,17 @@ final class AppModel: ObservableObject {
     private(set) var snapshot: Raster?
     private var snapshotWindow: SCWindow?
     private var generation = UUID()
+    private var permit = CommitPermit()
+    private var attempt = 0
     private var session: CaptureSession?
     private var source: LiveStream?
     private var captureTask: Task<Void,Never>?
     private let hud = CaptureHUD()
     private var lastTime = -Double.infinity
-    private var metadata: (CGRect, Double)?
+    private var lastSequence: UInt64 = 0
+    private var metadata: (CGRect, Double, Double)?
+    private var watchdog: Task<Void,Never>?
+    private var recoveryAttempts = 0
 
     func showMain() {
         NSApp.activate(ignoringOtherApps: true)
@@ -68,6 +73,7 @@ final class AppModel: ObservableObject {
     func start() async {
         guard !busy, !running, let snapshotWindow, let snapshot, snapshotWindow.windowID == selected else { return }
         let token = UUID(); generation = token; busy = true
+        permit.invalidate(); permit = CommitPermit(); attempt += 1; recoveryAttempts = 0
         defer { if token == generation { busy = false } }
         let frozenRegion = region
         do {
@@ -75,12 +81,26 @@ final class AppModel: ObservableObject {
             guard token == generation else { return }
             guard let window = fresh.first(where: { $0.windowID == snapshotWindow.windowID }), window.frame == snapshotWindow.frame else { throw CaptureError.geometryChanged }
             let engine = try CaptureSession(); let live = try LiveStream(window:window)
-            source = live; session = engine; lastTime = -Double.infinity; metadata = nil
+            source = live; session = engine; lastTime = -Double.infinity; lastSequence = 0; metadata = nil
             try await live.start()
             guard token == generation else { await live.stop(); return }
             running = true; paused = false; unresolved = false; selecting = false; confirmedHeight = 0; seams = 0
             status = "将鼠标放在正文中缓慢向下滚动；当前范围由你结束，不推断文档到底。"
             hud.show(model:self)
+            watchdog?.cancel()
+            watchdog = Task { [weak self] in
+                do { try await Task.sleep(for:.seconds(8)) } catch { return }
+                guard let self, token == self.generation, self.running else { return }
+                if self.confirmedHeight == 0 {
+                    self.paused = true; self.unresolved = true
+                    self.status = "8 秒内未收到有效帧，请检查权限/目标可见性，完成后重新开始。"
+                }
+                do { try await Task.sleep(for:.seconds(592)) } catch { return }
+                guard token == self.generation, self.running else { return }
+                self.unresolved = true
+                await self.finish()
+                self.status = "达到 10 分钟会话上限；已保留确认范围，请保存。"
+            }
             if window.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier {
                 FixtureHost.shared.window?.makeKeyAndOrderFront(nil)
             } else {
@@ -94,25 +114,37 @@ final class AppModel: ObservableObject {
                         guard !Task.isCancelled, token == self.generation else { break }
                         guard frame.time.isFinite, frame.time > self.lastTime else { continue }
                         self.lastTime = frame.time
+                        let dropped = self.lastSequence > 0 && frame.sequence != self.lastSequence + 1
+                        self.lastSequence = frame.sequence
                         if self.paused { continue }
+                        if dropped {
+                            self.permit.invalidate(); self.permit = CommitPermit(); self.attempt += 1
+                            self.paused = true; self.unresolved = true
+                            self.status = "处理队列丢帧，连续性需要重新确认；请回滚补采后继续。"
+                            continue
+                        }
+                        let frameAttempt = self.attempt, framePermit = self.permit
                         do {
                             let targets = try await ScreenSource.windows()
                             guard token == self.generation, !Task.isCancelled else { break }
+                            guard frameAttempt == self.attempt, !self.paused else { continue }
                             guard let target = targets.first(where: { $0.windowID == window.windowID }), target.frame == window.frame,
                                   target.owningApplication?.processID == window.owningApplication?.processID,
                                   frame.raster.width == snapshot.width, frame.raster.height == snapshot.height else { throw CaptureError.geometryChanged }
                             if let metadata = self.metadata {
-                                guard metadata.0 == frame.contentRect, metadata.1 == frame.scale else { throw CaptureError.geometryChanged }
-                            } else { self.metadata = (frame.contentRect,frame.scale) }
+                                guard metadata.0 == frame.contentRect, metadata.1 == frame.scale, metadata.2 == frame.contentScale else { throw CaptureError.geometryChanged }
+                            } else { self.metadata = (frame.contentRect,frame.scale,frame.contentScale) }
                             let cropped = try self.cropped(frame.raster,region:frozenRegion)
-                            let coverage = try await engine.accept(cropped)
+                            let coverage = try await engine.accept(cropped,permit:framePermit)
                             guard token == self.generation, !Task.isCancelled else { break }
+                            guard frameAttempt == self.attempt, !self.paused else { continue }
                             self.confirmedHeight = coverage.height; self.seams = coverage.seams
                             self.bitmap = cropped
                             self.unresolved = false
                             self.status = coverage.appended > 0 ? "已验证新增 \(coverage.appended) px；继续缓慢滚动。" : "画面已定位，尚无新增覆盖；静止不表示到底。"
                         } catch {
                             guard token == self.generation else { break }
+                            guard frameAttempt == self.attempt else { continue }
                             self.paused = true; self.unresolved = true; self.status = error.localizedDescription
                         }
                     }
@@ -126,12 +158,18 @@ final class AppModel: ObservableObject {
     }
     func togglePause() {
         guard running else { return }
+        permit.invalidate(); permit = CommitPermit(); attempt += 1
+        if paused {
+            recoveryAttempts += 1
+            guard recoveryAttempts <= 32 else { status = "达到 32 次恢复上限，请完成并保存当前结果。"; return }
+        }
         paused.toggle()
         status = paused ? "已暂停；继续时仍须与已确认画面重叠。" : "请缓慢回滚到已确认内容；可靠匹配后自动恢复。"
     }
     func finish() async {
         guard running, let session else { return }
         let token = UUID(); generation = token; running = false; busy = true
+        permit.invalidate(); watchdog?.cancel(); watchdog = nil
         captureTask?.cancel(); captureTask = nil; hud.close()
         if let source { await source.stop() }; source = nil
         guard token == generation else { return }
@@ -149,6 +187,7 @@ final class AppModel: ObservableObject {
     }
     func cancel() {
         generation = UUID(); captureTask?.cancel(); captureTask = nil
+        permit.invalidate(); watchdog?.cancel(); watchdog = nil
         let oldSource = source, oldSession = session
         source = nil; session = nil; running = false; busy = false; paused = false; hud.close()
         bitmap = nil; snapshot = nil; snapshotWindow = nil; selecting = false

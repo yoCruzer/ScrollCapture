@@ -19,3 +19,10 @@
 - SCStream 有界队列、真实帧时间和几何、正文像素框选、非激活 HUD、窗口独立过滤、手动暂停/恢复/结束、连续覆盖条带存储。全重叠像素复核，不做固定栏 mask；用户需框选正文。
 - `swift test --disable-sandbox --filter RegistrationTests`：5 tests / 0 failures，4.676s，涵盖 24 接缝/独立真值、±1px、周期/纯色歧义、丢重叠回滚、逆滚、固定栏失败、尺寸/资源/取消。中途首次编译因 HUD 提前于模型字段写入失败，完成模型后通过。
 - release .app 重建成功；实际 GUI 可打开，但新 ad-hoc 二进制 TCC 被拒。S1 真实多视口 NOT_RUN，暂 AWAITING_PERMISSION；先继续独立 S2/S3，最终候选集中重授权。
+
+## 2026-11-02 — S2 恢复、资源与证据完整性
+- 新增 CommitPermit、封存、PNG有序分片+manifest、失败重试与临时目录事务；资源上限见 DECISIONS D18。
+- `swift test --disable-sandbox --filter RecoveryExportTests`：首次7/7，加入审查反例后8/8（3.071s）。包括合法重复保留、半像素拒绝、同帧零追加、失效许可、精确分片拼回真值、既有文件保护、错误路径重试、取消清理、极端坐标。
+- 独立 review 固定94ddadd复现周期150/视口160/跳跃170被误认dy20的P1；已扩全重叠替代候选检测，真小位移与跳跃别名成对拒绝，前缀不变。无法观测的整屏重复边界见 D17，绝不宣称普遍唯一。
+- review发现SCK contentRect字典类型可能导致全帧静默丢弃；已安全解码、加入contentScale、元数据错误显式中断及8秒无首帧提示。重建后真实采集待集中授权。
+- Stream序号检测本地有界队列丢帧，暂停并要求回滚补采，不能把低帧率下的局部匹配视作绝对连续证据。

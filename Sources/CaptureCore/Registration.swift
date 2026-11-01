@@ -8,7 +8,9 @@ public enum Registration {
     public static func estimate(previous a: Raster, next b: Raster) throws -> Motion {
         guard a.width == b.width, a.height == b.height else { throw CaptureError.geometryChanged }
         guard a.width >= 32, a.height >= 64 else { throw CaptureError.invalidImage }
-        let limit = a.height * 2 / 3
+        // Search ALL observable overlap, including far aliases outside the allowed commit step.
+        // Even a short alternative overlap is evidence against unique displacement.
+        let limit = a.height - 8
         var candidates: [(dy: Int, score: Double)] = []
         candidates.reserveCapacity(limit * 2 + 1)
         for dy in -limit...limit {
@@ -27,6 +29,7 @@ public enum Registration {
         guard let best = candidates.first, best.score <= 1.5 else { throw CaptureError.noOverlap }
         let runner = candidates[1].score
         guard runner - best.score >= 1.0 else { throw CaptureError.ambiguous }
+        guard abs(best.dy) <= a.height * 2 / 3 else { throw CaptureError.noOverlap }
         let aStart = max(0,best.dy), bStart = max(0,-best.dy)
         try validate(a, y: aStart, b, y: bStart, rows: a.height - abs(best.dy))
         return Motion(dy: best.dy, error: best.score, runnerUp: runner)

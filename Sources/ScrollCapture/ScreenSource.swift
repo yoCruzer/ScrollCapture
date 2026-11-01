@@ -23,6 +23,9 @@ enum ScreenSource {
     }
     static func screenshot(_ window: SCWindow) async throws -> Raster {
         let filter = SCContentFilter(desktopIndependentWindow: window)
-        return try await Raster(image: SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration(filter)))
+        let config = configuration(filter)
+        guard config.width > 0, config.height > 0, config.width <= 16_384, config.height <= 16_384,
+              config.width * config.height <= 8_000_000 else { throw CaptureError.resourceLimit }
+        return try await Raster(image: SCScreenshotManager.captureImage(contentFilter: filter, configuration: config))
     }
 }

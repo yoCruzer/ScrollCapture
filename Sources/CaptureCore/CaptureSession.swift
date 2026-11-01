@@ -28,14 +28,17 @@ public actor CaptureSession {
     }
     deinit { try? FileManager.default.removeItem(at: directory) }
 
-    public func accept(_ frame: Raster) throws -> Coverage {
+    public func accept(_ frame: Raster, permit: CommitPermit = CommitPermit()) throws -> Coverage {
+        try permit.check()
         guard !closed, !sealed else { throw CancellationError() }
-        guard frame.width * frame.height <= 24_000_000 else { throw CaptureError.resourceLimit }
+        guard frame.width * frame.height <= 8_000_000 else { throw CaptureError.resourceLimit }
         guard let previous else {
             guard frame.width * frame.height <= maxPixels else { throw CaptureError.resourceLimit }
-            try append(frame, at: 0)
-            self.previous = frame; width = frame.width; height = frame.height
-            return Coverage(position: 0, height: height, appended: height, seams: 0)
+            return try permit.commit {
+                try append(frame, at: 0)
+                self.previous = frame; width = frame.width; height = frame.height
+                return Coverage(position: 0, height: height, appended: height, seams: 0)
+            }
         }
         let motion = try Registration.estimate(previous: previous, next: frame)
         let nextPosition = position + motion.dy
@@ -47,10 +50,12 @@ public actor CaptureSession {
         try Registration.validate(history, y: 0, frame, y: 0, rows: known)
         let added = max(0, nextPosition + frame.height - height)
         guard width * (height + added) <= maxPixels, strips.count < 4096 else { throw CaptureError.resourceLimit }
-        if added > 0 { try append(frame.crop(y: frame.height-added, height: added), at: height) }
-        position = nextPosition; height += added; self.previous = frame
-        if added > 0 { seams += 1 }
-        return Coverage(position: position, height: height, appended: added, seams: seams)
+        return try permit.commit {
+            if added > 0 { try append(frame.crop(y: frame.height-added, height: added), at: height) }
+            position = nextPosition; height += added; self.previous = frame
+            if added > 0 { seams += 1 }
+            return Coverage(position: position, height: height, appended: added, seams: seams)
+        }
     }
     private func append(_ raster: Raster, at y: Int) throws {
         let url = directory.appendingPathComponent("\(strips.count).rgba")
