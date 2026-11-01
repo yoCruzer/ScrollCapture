@@ -17,7 +17,7 @@ public enum CaptureError: Error, LocalizedError, Sendable {
     }
 }
 
-/// Canonical, top-to-bottom, non-premultiplied opaque RGBA8 in sRGB.
+/// Canonical, top-to-bottom, premultiplied RGBA8 in sRGB.
 public struct Raster: Sendable, Equatable {
     public let width: Int
     public let height: Int
@@ -51,7 +51,7 @@ public struct Raster: Sendable, Equatable {
     }
     public func crop(x: Int = 0, y: Int, width w: Int? = nil, height h: Int) throws -> Raster {
         let w = w ?? width
-        guard x >= 0, y >= 0, w > 0, h > 0, x + w <= width, y + h <= height else { throw CaptureError.invalidImage }
+        guard x >= 0, x <= width, y >= 0, y <= height, w > 0, h > 0, w <= width-x, h <= height-y else { throw CaptureError.invalidImage }
         var result = [UInt8](); result.reserveCapacity(w * h * 4)
         for row in y..<(y+h) { result.append(contentsOf: bytes[((row*width+x)*4)..<((row*width+x+w)*4)]) }
         return try Raster(width: w, height: h, bytes: result)
