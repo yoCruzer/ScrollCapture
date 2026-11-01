@@ -2,28 +2,22 @@
 
 更新日期：2026-11-01（Asia/Shanghai）
 
-**DOCUMENTATION_READY — 原生开发尚未开始。**
+**IN_PROGRESS_S1 — S0 实际 App 构建、GUI、授权、单张采集和保存已验证。**
 
-正式公开仓库：https://github.com/yoCruzer/ScrollCapture
-默认分支：main。文档初始化分支：docs/initial-project-plan；Draft PR：https://github.com/yoCruzer/ScrollCapture/pull/1。后续产品开发分支：codex/scroll-capture-v1。
+- 分支：`codex/scroll-capture-v1`，起点 `a922c13e5864c8e2281263a12d2af8c506f2b8a1`。PR #1 保留。
+- 产品 Draft PR 待首次推送创建。
+- 本机：Apple Silicon / macOS 27.0.1 (26A434) / Xcode 27.2 (27B52) / Swift 6.4.2；最低 macOS 15。
+- 构建：`bash Scripts/build-app.sh`；启动：`open build/ScrollCapture.app`。
+- Bundle ID：`com.yocruzer.ScrollCapture`；无开发签名证书，使用 ad-hoc 签名和固定路径；重建后重检 TCC。
 
-## 已完成
-- 产品目标、范围、架构、竞品/开源研究、Chrome V2 经验、验收矩阵、S0–S4 计划。
-- 对产品范围、执行顺序、权限身份、READY 证据条件、文件保存保护和研究门禁进行了复核与修订；研究实验不额外形成串行阶段。
-- Chrome 参考身份：56053a021409a4771aa057d456f8138164f2d926 人工成功基线；490e0cec85211b2783b15e97e870721701833152 完整 CI 候选。
-
-## 阶段
-| 阶段 | 状态 | 原生证据 |
+| 阶段 | 状态 | 证据 |
 |---|---|---|
-| S0 工程/真实采集 | NOT_STARTED | 无 |
-| S1 手动端到端 | NOT_STARTED | 无 |
-| S2 恢复/资源 | NOT_STARTED | 无 |
-| S3 有界自动 | NOT_STARTED | 无 |
-| S4 review/交付 | NOT_STARTED | 无 |
+| S0 | 实现/实采完成，待独立 review | release .app、codesign verify、GUI、ScreenCaptureKit 520×468 合成窗口、PNG 保存 |
+| S1 | IN_PROGRESS | 尚无多视口证据 |
+| S2 | NOT_STARTED | 无 |
+| S3 / F06 | NOT_STARTED | 未完成 |
+| S4 | NOT_STARTED | 无 |
 
-本仓库初始提交仅包含文档，不是产品源码或测试证据。
+测试：`swift test --disable-sandbox`，2 tests / 0 failures（PNG 往返方向、无效输入）。首次沙箱内 dSYM 生成被拒，提权后构建通过。初次 TCC 拒绝保留为失败记录；用户授权重启后实际采集/保存成功。产品 SHA 将在下一个检查点绑定；不是文档 SHA 验收。
 
-## 下一步
-Codex 核对远端和工作区，创建 codex/scroll-capture-v1，启动 S0；确认真实 Xcode/Swift/SDK、稳定 Bundle ID，完成真实 App 截图与最小离线真值回放。缺少真实 GUI/TCC 条件时记录阻塞并继续不受影响工作。
-
-无原生缺陷记录；原生实现尚未开始。
+私有本地证据：`artifacts/s0/ScrollCapture.png`（仅合成窗口，gitignored）。真实屏幕/私聊/窗口标题不上传。当前无本 App 多视口证据，尚不能 READY。Chrome 参考不计入本 App 验收。
