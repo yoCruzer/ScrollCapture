@@ -59,3 +59,7 @@
 3. 补Retina/多显示器、采集中撤销权限、超8MP真实分片与实际聊天客户端的非敏感样本；不可用记NOT_TESTED，不改变账号环境。
 
 完整步骤见 [BUILD_AND_VALIDATE](BUILD_AND_VALIDATE.md)。只有Owner明确确认后才可标OWNER_VERIFIED；本轮停在READY_FOR_OWNER_DEVICE_GATE，保留Draft PR，不合并或发布。
+
+最终独立证据复核另用Python标准库PNG解码器确认三张实际图RGBA逐字节零差异，且产品/压缩包身份一致；结论支持手动候选Owner门禁，F06仍未通过。证据说明见REVIEW。
+
+交付检查点e041c0b的[最终CI run41329723056](https://github.com/yoCruzer/ScrollCapture/actions/runs/41329723056)核心回归、App构建、签名全部成功。末次仅文档证据追加，不重跑未受影响的产品检查。

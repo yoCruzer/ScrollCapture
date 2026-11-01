@@ -14,3 +14,12 @@
 reviewer 运行独立周期别名/CGRect字典/稀疏标志 probe，未重复全量测试。真实ScreenCaptureKit多视口、自动B01/B03、退出清理、浮层与gate并发实测在review时均NOT_RUN；由主实现者继续集中实测，不把静态结论冒充设备证据。
 
 初版构建曾误把文档SHA标为clean，已保留失败记录。S0旧截图仅是提交前工作树观察；最终产品要单独以准确SHA与二进制hash绑定。
+
+## 交付证据独立复核
+
+2026-11-02，reviewer再次核对保存证据和产品身份（未独立重演GUI）：
+
+- 以独立Python标准库PNG解码器对实际723×868、732×1241、732×1211与不可变oracle重新比较，RGBA逐字节零差异；不是仅复用实现者比较器的结果。
+- 产品Sources/Resources/Package相对303c331无变化；App内源码标记、二进制/zip hash与STATUS一致。
+- 原始条带清理1目录/2510256 bytes→0；本机20/20；连接器确认CI 41326467704所有测试/构建/签名步骤成功。
+- 复核结论：未发现必须阻塞手动交付的新问题，可以标READY_FOR_OWNER_DEVICE_GATE手动候选，必须保留F06未通过、非完整V1、非OWNER_VERIFIED。内置字体oracle失败没有被冒充通过。
