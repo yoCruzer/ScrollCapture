@@ -2,7 +2,7 @@
 
 原生 macOS 截图与垂直滚动截图工具，Swift 6 + SwiftUI/AppKit + ScreenCaptureKit，macOS 15+，本地处理。
 
-当前进行新手体验改版：三步操作、范围确认、结果保存与权限引导；问题清单见 [UX_REVIEW](Docs/UX_REVIEW.md)。新候选等待实际App重新授权及GUI补验，状态为 **AWAITING_PERMISSION**。旧版303c331已通过手动多视口验收；**F06自动仍未通过，不称完整V1**。准确版本与证据以 [Docs/STATUS.md](Docs/STATUS.md) 为准，限制见 [KNOWN_ISSUES](Docs/KNOWN_ISSUES.md)。开发分支 `codex/scroll-capture-v1`，产品 [Draft PR #2](https://github.com/yoCruzer/ScrollCapture/pull/2)；启动文档 [Draft PR #1](https://github.com/yoCruzer/ScrollCapture/pull/1) 保留，不自动合并或发布。
+新手体验改版已完成：三步操作、范围确认、结果保存与权限引导；问题清单见 [UX_REVIEW](Docs/UX_REVIEW.md)。产品源码fd91e23，新版实际GUI、原生多视口/恢复及独立像素复核通过，状态为 **READY_FOR_OWNER_DEVICE_GATE 手动候选**；**F06自动仍未通过，不称完整V1**。准确版本与证据以 [Docs/STATUS.md](Docs/STATUS.md) 为准，限制见 [KNOWN_ISSUES](Docs/KNOWN_ISSUES.md)。开发分支 `codex/scroll-capture-v1`，产品 [Draft PR #2](https://github.com/yoCruzer/ScrollCapture/pull/2)；启动文档 [Draft PR #1](https://github.com/yoCruzer/ScrollCapture/pull/1) 保留，不自动合并或发布。
 
 ```sh
 bash Scripts/build-app.sh
