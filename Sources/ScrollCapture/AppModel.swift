@@ -19,6 +19,8 @@ final class AppModel: ObservableObject {
     @Published var confirmedHeight = 0
     @Published var seams = 0
     @Published var automatic = false
+    @Published var automaticNotice: String?
+    @Published var permissionNeeded = false
     @Published var shortcut = UserDefaults.standard.integer(forKey:"shortcut")
     @Published var trimTop = 0
     @Published var trimBottom = 0
@@ -49,6 +51,23 @@ final class AppModel: ObservableObject {
     private var watchdog: Task<Void,Never>?
     private var recoveryAttempts = 0
 
+    var resultHeight: Int { session == nil ? (bitmap?.height ?? 0) : (exportRange?.count ?? confirmedHeight) }
+    var resultRequiresParts: Bool { (bitmap?.width ?? 0) * resultHeight > 8_000_000 }
+    var canTrimResult: Bool {
+        trimTop >= 0 && trimBottom >= 0 && trimTop < resultHeight && trimBottom < resultHeight - trimTop && (trimTop > 0 || trimBottom > 0)
+    }
+    var resultSummary: String {
+        guard let bitmap else { return "" }
+        let dimensions = "\(bitmap.width) × \(resultHeight) px"
+        guard session != nil else { return "\(dimensions) · 单张截图" }
+        return "\(dimensions) · \(unresolved ? "仅包含已确认的部分内容" : "本次采集的连续范围")。结束采集不代表到达文档底部。"
+    }
+    func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     func showMain() {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first(where: { $0.title == "ScrollCapture" })?.makeKeyAndOrderFront(nil)
@@ -56,6 +75,7 @@ final class AppModel: ObservableObject {
     func selectionChanged() {
         guard !running else { return }
         generation = UUID(); busy = false; snapshot = nil; snapshotWindow = nil; region = nil; selecting = false
+        bitmap = nil; unresolved = false; automaticNotice = nil
     }
     func selectWindow(_ id: UInt32, fromGate: Bool = false) { guard !busy, !running, !gateRunning || fromGate else { return }; selected = id; selectionChanged() }
     func configureShortcut() {
@@ -72,8 +92,15 @@ final class AppModel: ObservableObject {
         do {
             let result = try await ScreenSource.windows()
             guard token == generation else { return }
-            windows = result; status = "选择窗口，获取画面；再框选可滚动的正文。"
-        } catch { if token == generation { status = "需要屏幕录制权限。请在系统设置中允许 ScrollCapture，然后退出并重新打开。" } }
+            windows = result; permissionNeeded = false
+            if !result.contains(where: { $0.windowID == selected }) { selected = 0 }
+            status = result.isEmpty ? "没有找到可截取的窗口。请打开目标内容，再刷新列表。" : "从左侧选择窗口，再点“预览并选择范围”。"
+        } catch {
+            if token == generation {
+                permissionNeeded = !CGPreflightScreenCaptureAccess()
+                status = permissionNeeded ? "请先允许 ScrollCapture 录制屏幕，再退出并重新打开。" : "无法读取窗口列表，请重试：\(error.localizedDescription)"
+            }
+        }
     }
     func capture(fromGate: Bool = false) async {
         guard !busy, !running, !gateRunning || fromGate, let window = windows.first(where: { $0.windowID == selected }) else { return }
@@ -83,9 +110,15 @@ final class AppModel: ObservableObject {
             let image = try await ScreenSource.screenshot(window)
             guard token == generation, target == selected else { return }
             bitmap = image; snapshot = image; snapshotWindow = window; region = nil; session = nil; selecting = true
+            automaticNotice = nil; permissionNeeded = false; confirmedHeight = 0; seams = 0
             exportRange = nil; trimTop = 0; trimBottom = 0
-            unresolved = false; status = "窗口画面 \(image.width) × \(image.height) px；拖选正文或直接保存。"
-        } catch { if token == generation { status = error.localizedDescription } }
+            unresolved = false; status = "拖选范围，再选择单张截图或滚动截图。"
+        } catch {
+            if token == generation {
+                permissionNeeded = !CGPreflightScreenCaptureAccess()
+                status = permissionNeeded ? "屏幕录制权限不可用，请打开权限设置，允许后退出并重新打开。" : error.localizedDescription
+            }
+        }
     }
     func cropped(_ image: Raster, region: CGRect?) throws -> Raster {
         guard let region else { return image }
@@ -93,7 +126,7 @@ final class AppModel: ObservableObject {
     }
     func regionScreenshot() {
         guard !busy, !running, !gateRunning, let snapshot else { return }
-        do { bitmap = try cropped(snapshot,region:region); session = nil; selecting = false; status = "区域截图完成" }
+        do { bitmap = try cropped(snapshot,region:region); session = nil; selecting = false; status = "截图已就绪，检查画面后保存或复制。" }
         catch { status = error.localizedDescription }
     }
     func start(fromGate: Bool = false) async {
@@ -111,6 +144,7 @@ final class AppModel: ObservableObject {
             try await live.start()
             guard token == generation else { await live.stop(); return }
             running = true; paused = false; unresolved = false; selecting = false; confirmedHeight = 0; seams = 0
+            automaticNotice = nil
             exportRange = nil; trimTop = 0; trimBottom = 0
             activeWindow = window; activeRegion = frozenRegion ?? CGRect(x:0,y:0,width:snapshot.width,height:snapshot.height)
             activeScale = CGFloat(snapshot.width)/window.frame.width
@@ -218,7 +252,7 @@ final class AppModel: ObservableObject {
             guard size.height > 0 else { throw CaptureError.invalidImage }
             let preview = try await session.read(y:0,height:min(size.height,max(1,8_000_000/size.width)))
             guard token == generation else { return }
-            bitmap = preview; selecting = false
+            bitmap = preview; selecting = false; confirmedHeight = size.height
             status = "\(unresolved ? "局部结果 · 未确认尾部" : "连续采集 · 用户结束（未确认文档尾部）") · \(size.width) × \(size.height) px\(preview.height < size.height ? "；预览仅显示首片，保存包含全部分片" : "")"
         } catch { if token == generation { status = error.localizedDescription; bitmap = nil } }
         if token == generation { busy = false }
@@ -233,11 +267,14 @@ final class AppModel: ObservableObject {
         let oldSource = source, oldSession = session
         source = nil; session = nil; running = false; busy = false; paused = false; hud.close()
         bitmap = nil; snapshot = nil; snapshotWindow = nil; selecting = false
-        status = "已取消，正在释放临时捕获。"
+        region = nil; unresolved = false; confirmedHeight = 0; seams = 0; exportRange = nil
+        trimTop = 0; trimBottom = 0; automaticNotice = nil
+        let cleanupStatus = "正在清理上一次截图；可以选择窗口开始下一张。"
+        status = cleanupStatus
         let token = generation, priorCleanup = cleanupTask
         cleanupTask = Task {
             await oldSession?.cancel(); await oldSource?.stop(); await priorCleanup?.value
-            if token == generation { status = "已取消，临时捕获清理已完成。" }
+            if token == generation, status == cleanupStatus { status = "选择窗口，开始下一张截图。" }
         }
         showMain()
     }
@@ -246,7 +283,11 @@ final class AppModel: ObservableObject {
         await exportTask?.value
         await cleanupTask?.value
     }
-    func stopAutomatic() { scrollDriver.stop(); automatic = false }
+    func stopAutomatic() {
+        scrollDriver.stop()
+        if automatic { automaticNotice = "自动滚动已停止。" }
+        automatic = false
+    }
     func trimResult() async {
         guard !busy, !running, !selecting, !gateRunning, let bitmap else { return }
         let token = generation; busy = true
@@ -255,9 +296,13 @@ final class AppModel: ObservableObject {
             let width: Int, height: Int
             if let session { let size = await session.dimensions(); width = size.width; height = size.height }
             else { width = bitmap.width; height = bitmap.height }
-            guard trimTop >= 0, trimBottom >= 0, trimTop < height, trimBottom < height-trimTop else { throw CaptureError.invalidImage }
+            guard trimTop >= 0, trimBottom >= 0, trimTop < height, trimBottom < height-trimTop else {
+                status = "裁剪数值需为非负数，且至少保留 1 行画面。"; return
+            }
             let base = session == nil ? 0..<height : (exportRange ?? 0..<height)
-            guard trimTop < base.count, trimBottom < base.count-trimTop else { throw CaptureError.invalidImage }
+            guard trimTop < base.count, trimBottom < base.count-trimTop else {
+                status = "裁剪总量超过当前图片高度，请减少顶部或底部的数值。"; return
+            }
             let range = (base.lowerBound+trimTop)..<(base.upperBound-trimBottom)
             let preview: Raster
             if let session { preview = try await session.read(y:range.lowerBound,height:min(range.count,8_000_000/width)) }
@@ -270,24 +315,25 @@ final class AppModel: ObservableObject {
     }
     func startAutomatic() {
         guard running, !paused, !automatic, !gateRunning, seams >= 3, let activeWindow, let activeRegion else {
-            status = "先在当前正文手动验证至少 3 个接缝，再启用有界自动。"; return
+            automaticNotice = "先在当前正文手动完成至少 3 次拼接，再尝试自动滚动。"; return
         }
         guard ScrollDriver.permission() else {
             ScrollDriver.requestPermission()
-            status = "自动控制需要允许 ScrollCapture 的辅助功能权限；手动采集不受影响。"; return
+            automaticNotice = "自动滚动需要辅助功能权限，请在系统设置中允许 ScrollCapture；也可继续手动滚动。"; return
         }
         let token = generation
         automatic = true; status = "3 秒后开始自动；把鼠标放进正文，保持目标窗口前台。任意滚轮/点击/按键可接管。"
+        automaticNotice = "正在尝试自动滚动：保持目标窗口在前台、鼠标位于正文。点击、按键或滚轮会切回手动。"
         scrollDriver.start(window:activeWindow,region:activeRegion,scale:activeScale,progress:{ [weak self] in
             guard let self else { return (0,0,false) }
             return (self.confirmedHeight,self.acceptedAt,self.running && !self.paused && self.automatic && token == self.generation)
         },stopped:{ [weak self] reason in
             guard let self, token == self.generation else { return }
-            self.automatic = false; self.status = reason
+            self.automatic = false; self.automaticNotice = reason; self.status = reason
         })
     }
     func beginSave() {
-        guard !busy, !running, !exporting, !gateRunning else { return }
+        guard !busy, !running, !selecting, !exporting, !gateRunning, bitmap != nil else { return }
         exporting = true
         exportTask = Task { [weak self] in
             guard let self else { return }
@@ -297,7 +343,7 @@ final class AppModel: ObservableObject {
     }
     func cancelExport() { exportTask?.cancel() }
     private func save() async {
-        guard !busy, !running, let bitmap else { return }
+        guard !busy, !running, !selecting, let bitmap else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -330,7 +376,7 @@ final class AppModel: ObservableObject {
         catch { if token == generation { status = "保存失败，结果保留，可重试：\(error.localizedDescription)" } }
     }
     func copy() async {
-        guard !busy, !running, !gateRunning, let bitmap else { return }
+        guard !busy, !running, !selecting, !gateRunning, let bitmap else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {

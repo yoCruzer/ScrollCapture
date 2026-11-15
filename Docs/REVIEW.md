@@ -23,3 +23,8 @@ reviewer 运行独立周期别名/CGRect字典/稀疏标志 probe，未重复全
 - 产品Sources/Resources/Package相对303c331无变化；App内源码标记、二进制/zip hash与STATUS一致。
 - 原始条带清理1目录/2510256 bytes→0；本机20/20；连接器确认CI 41326467704所有测试/构建/签名步骤成功。
 - 复核结论：未发现必须阻塞手动交付的新问题，可以标READY_FOR_OWNER_DEVICE_GATE手动候选，必须保留F06未通过、非完整V1、非OWNER_VERIFIED。内置字体oracle失败没有被冒充通过。
+
+
+## 2026-11-15 新手体验增量审查
+
+独立只读review检查MainView/App/AppModel/HUD/RegionPreview及新流程。发现3项P2：完成时应以真实session尺寸冻结结果高度；所有自动停止路径需更新独立提示；旧清理回调不得覆盖新操作提示。实现者修复后，reviewer增量确认全部关闭，并检查放弃确认、选区禁止直接导出、开发验收入口隔离、HUD固定操作区。未发现新的阻断项，允许冻结进入真实GUI定向验收。reviewer未运行GUI或测试，不能代替新二进制的L3证据。

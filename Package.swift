@@ -8,6 +8,7 @@ let package = Package(
     targets: [
         .target(name: "CaptureCore"),
         .executableTarget(name: "ScrollCapture", dependencies: ["CaptureCore"]),
-        .testTarget(name: "CaptureCoreTests", dependencies: ["CaptureCore"])
+        .testTarget(name: "CaptureCoreTests", dependencies: ["CaptureCore"]),
+        .testTarget(name: "ScrollCaptureTests", dependencies: ["ScrollCapture", "CaptureCore"])
     ]
 )

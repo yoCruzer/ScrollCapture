@@ -1,10 +1,21 @@
 # 当前状态
 
-更新日期：2026-11-02（Asia/Shanghai）
+更新日期：2026-11-15（Asia/Shanghai）
 
-**READY_FOR_OWNER_DEVICE_GATE — 手动候选核心L3证据齐备，等待Owner集中设备验收。F06自动模式未通过，不是完整V1；不是OWNER_VERIFIED。**
+**AWAITING_PERMISSION — 新手体验改版已实现并通过测试/独立静态审查，新二进制真实采集待重新授权。F06仍未通过，不是完整V1、不是OWNER_VERIFIED。**
 
-## 交付候选
+## 2026-11-15 新手体验改进
+
+- 问题与处理清单：[UX_REVIEW](UX_REVIEW.md)。三步导航、分阶段操作、预览画布、权限引导、选区确认后导出、放弃确认、裁剪说明、长图分片提示、实验自动的持久停止反馈。
+- 修改范围为App界面/协调状态及4项流程测试；CaptureCore、LiveStream、ScrollDriver、ScreenSource未修改。旧版逐像素证据保留，不冒充新二进制GUI证据。
+- `swift test -c release --disable-sandbox`：24/24通过（20核心+4流程）；环境macOS27.0.1 / Xcode27.2 / Swift6.4.2，arm64。
+- 独立只读review发现3项P2并修复：最终尺寸冻结、自动停止状态、旧清理提示覆盖。增量复核无新阻断。
+- 初次新界面实际启动、首屏布局和权限拒绝引导已检查；该次是提交前工作树构建，不能作为最终SHA的采集证据。
+- 保留旧版已验收App及压缩包；新候选源码/构建身份和真实GUI结果在冻结后追加。核心真实采集未补验前保持AWAITING_PERMISSION。
+
+以下为**旧版303c331的历史交付证据**，其READY结论不自动适用于本轮新二进制。
+
+## 旧版交付候选
 
 - 产品源码：`303c331b45740055801c0f11f6ff12534fa5460e`，分支 `codex/scroll-capture-v1`。
 - 产品 [Draft PR #2](https://github.com/yoCruzer/ScrollCapture/pull/2) 指向 main；启动文档 [Draft PR #1](https://github.com/yoCruzer/ScrollCapture/pull/1) 保留。

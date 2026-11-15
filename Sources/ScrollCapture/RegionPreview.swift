@@ -11,10 +11,16 @@ struct RegionPreview: View {
             ZStack(alignment: .topLeading) {
                 if let image = try? raster.image() { Image(decorative: image, scale: 1).resizable().interpolation(.none).frame(width:w,height:h) }
                 if let r = region {
-                    Rectangle().fill(.blue.opacity(0.15)).overlay(Rectangle().stroke(.blue,lineWidth:2))
+                    Path { path in
+                        path.addRect(CGRect(x: 0, y: 0, width: w, height: h))
+                        path.addRect(CGRect(x: r.minX*scale, y: r.minY*scale, width: r.width*scale, height: r.height*scale))
+                    }.fill(.black.opacity(0.38), style: FillStyle(eoFill: true))
+                    Rectangle().fill(.clear).overlay(Rectangle().stroke(.white,lineWidth:3))
+                        .overlay(Rectangle().stroke(Color.accentColor,style:StrokeStyle(lineWidth:1.5,dash:[6,3])))
                         .frame(width:r.width*scale,height:r.height*scale).offset(x:r.minX*scale,y:r.minY*scale)
                 }
             }.frame(width:w,height:h).contentShape(Rectangle())
+                .accessibilityLabel("截图范围预览，在画面中拖动选择正文")
                 .gesture(DragGesture(minimumDistance: 2).onChanged { value in
                     let x0 = floor(max(0,min(CGFloat(raster.width),min(value.startLocation.x,value.location.x)/scale)))
                     let y0 = floor(max(0,min(CGFloat(raster.height),min(value.startLocation.y,value.location.y)/scale)))
