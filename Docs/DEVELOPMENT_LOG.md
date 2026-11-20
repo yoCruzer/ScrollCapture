@@ -85,3 +85,8 @@
 独立reviewer标准库PNG解码+CRC核对，全文搜索唯一匹配：单张裁剪oracle(18,32)和手动恢复(18,22)，完整RGBA均零差异；偏移1行负对照分别335631/684256不同字节。报告artifacts/ux-20261115/independent-review-images.json仅本地。reviewer核对App源码标记、23项构建输入、测试日志及CI43698477095全部通过，支持READY_FOR_OWNER_DEVICE_GATE手动候选。F06未通过、非完整V1、非OWNER_VERIFIED保持不变。
 
 最后只追加文档，不重编译已授权受测App；本轮产品提交fd91e23已普通推送，Draft PR #2更新。旧版303c331备份与历史证据保留，真实图像/窗口列表未上传。新版Safari全流程、实际超8MP分片、深色模式、完整VoiceOver与不同显示比例NOT_RUN；相应旧核心证据按精确版本引用，没有重复全套研究实验。
+
+
+## 2026-11-20 Owner人工真机测试说明
+
+用户询问当前是否进入人工真机测试及明确SOP。核对干净HEAD a61287f与实际App内fd91e23 clean身份，新增Docs/OWNER_TEST_SOP.md，包含无需构建的启动路径、非敏感浏览器夹具、A–F手动核心操作/通过标准、实际应用补测、独立可选F06诊断及反馈模板。BUILD_AND_VALIDATE与STATUS增加入口。未操作用户桌面、未重建产品、未改变既有门禁；纯文档按内容与链接检查，不重复24项代码测试。

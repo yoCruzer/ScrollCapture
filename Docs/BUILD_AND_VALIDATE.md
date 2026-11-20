@@ -2,6 +2,8 @@
 
 最低 macOS 15，Swift 6；首轮 Apple Silicon。本机不依赖第三方包。当前真实证据/阻塞状态只看 [STATUS](STATUS.md)。
 
+**Owner人工测试请先读 [人工真机测试SOP](OWNER_TEST_SOP.md)**：约20–30分钟，包含准确按钮、预期结果、失败处理及反馈模板；本文保留开发构建和技术验证细节。
+
 ## 构建和启动
 
 ```sh
