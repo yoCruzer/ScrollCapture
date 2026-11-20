@@ -1,0 +1,19 @@
+.DS_Store
+.build/
+DerivedData/
+build/
+dist/
+artifacts/
+local-data/
+capture-sessions/
+private-fixtures/
+.env
+.env.*
+!.env.example
+*.xcuserstate
+xcuserdata/
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# Keep intentional public PNG/JSON fixtures versionable.
