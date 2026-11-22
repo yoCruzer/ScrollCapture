@@ -28,13 +28,14 @@ public actor CaptureSession {
     }
     deinit { try? FileManager.default.removeItem(at: directory) }
 
-    public func accept(_ frame: Raster, permit: CommitPermit = CommitPermit()) throws -> Coverage {
+    public func accept(_ frame: Raster, permit: CommitPermit = CommitPermit(), checkFreshness: @Sendable () throws -> Void = {}) throws -> Coverage {
         try permit.check()
         guard !closed, !sealed else { throw CancellationError() }
         guard frame.width * frame.height <= 8_000_000 else { throw CaptureError.resourceLimit }
         guard let previous else {
             guard frame.width * frame.height <= maxPixels else { throw CaptureError.resourceLimit }
             return try permit.commit {
+                try checkFreshness()
                 try append(frame, at: 0)
                 self.previous = frame; width = frame.width; height = frame.height
                 return Coverage(position: 0, height: height, appended: height, seams: 0)
@@ -51,6 +52,7 @@ public actor CaptureSession {
         let added = max(0, nextPosition + frame.height - height)
         guard width * (height + added) <= maxPixels, strips.count < 4096 else { throw CaptureError.resourceLimit }
         return try permit.commit {
+            try checkFreshness()
             if added > 0 { try append(frame.crop(y: frame.height-added, height: added), at: height) }
             position = nextPosition; height += added; self.previous = frame
             if added > 0 { seams += 1 }
@@ -63,7 +65,7 @@ public actor CaptureSession {
         strips.append(Strip(y: y, height: raster.height, url: url))
     }
     public func read(y: Int, height h: Int) throws -> Raster {
-        guard !closed, width > 0, y >= 0, h > 0, y+h <= height, width*h <= 40_000_000 else { throw CaptureError.invalidImage }
+        guard !closed, width > 0, y >= 0, h > 0, y <= height, h <= height - y, h <= 65_536, h <= 40_000_000 / width else { throw CaptureError.invalidImage }
         var bytes = [UInt8](); bytes.reserveCapacity(width*h*4)
         for strip in strips where strip.y < y+h && strip.y+strip.height > y {
             let start = max(y,strip.y)-strip.y, end = min(y+h,strip.y+strip.height)-strip.y

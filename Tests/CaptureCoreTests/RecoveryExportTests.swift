@@ -120,6 +120,56 @@ final class RecoveryExportTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(FileManager.default.fileExists(atPath:root.appendingPathComponent("cancelled").path))
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath:root.path).contains { $0.hasPrefix(".ScrollCapture-export-") })
     }
+    func testExpiredFrameDoesNotAdvanceCoverage() async throws {
+        let session = try CaptureSession()
+        let first = try fixture.viewport(at: 0)
+        let second = try fixture.viewport(at: 40)
+        for frame in [first, second] {
+            do {
+                _ = try await session.accept(frame, checkFreshness: { throw CaptureError.staleFrame })
+                XCTFail("Expired frame committed")
+            } catch CaptureError.staleFrame {}
+            let coverage = try await session.accept(frame)
+            XCTAssertEqual(coverage.appended, frame == first ? first.height : 40)
+        }
+    }
+
+    func testThinResultCrossesRasterHeightBeforePixelBudget() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = try CaptureSession(root: root)
+        for y in stride(from: 0, through: 65_400, by: 100) {
+            _ = try await session.accept(fixture.viewport(at: y))
+        }
+        await session.seal()
+        let size = await session.dimensions()
+        XCTAssertEqual(size.height, 65_560)
+        let rows = Raster.outputRows(width: size.width)
+        XCTAssertEqual(rows, 65_536)
+        XCTAssertEqual(Raster.previewRows(width: 64, height: 65_536), 65_536)
+        XCTAssertEqual(Raster.previewRows(width: 64, height: 65_537), 16_384)
+        XCTAssertEqual(Raster.outputRows(width: 128), 62_500)
+        let preview = try await session.read(y: 0, height: rows)
+        XCTAssertEqual(preview.height, rows)
+        let folder = try await session.exportParts(parent: root, name: "thin", partial: false)
+        let last = try Data(contentsOf: folder.appendingPathComponent("part-0005.png"))
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(last as CFData, nil))
+        let tail = try Raster(image: XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil)))
+        XCTAssertEqual(tail, try fixture.viewport(at: rows, height: size.height - rows))
+        do { _ = try await session.read(y: Int.max, height: 1); XCTFail() } catch {}
+    }
+
+    func testAlphaChangeInOtherwiseMatchingOverlapIsRejected() throws {
+        let a = try fixture.viewport(at: 0)
+        var bytes = a.bytes
+        bytes[3] = 254
+        let b = try Raster(width: a.width, height: a.height, bytes: bytes)
+        XCTAssertThrowsError(try Registration.validate(a, y: 0, b, y: 0, rows: a.height))
+        XCTAssertNoThrow(try Registration.validate(b, y: 0, b, y: 0, rows: b.height))
+        XCTAssertThrowsError(try Registration.validate(a, y: Int.max, b, y: 0, rows: 1))
+    }
+
     func testInvalidCropExtremeCoordinatesDoNotTrap() throws {
         let r = try fixture.viewport(at:0)
         XCTAssertThrowsError(try r.crop(x:Int.max,y:0,width:Int.max,height:2))

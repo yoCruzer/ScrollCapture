@@ -39,7 +39,7 @@ struct HUDView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {
-                Button(model.paused ? "继续采集" : "暂停") { model.togglePause() }.disabled(model.gateRunning)
+                Button(model.paused ? "继续采集" : "暂停") { model.togglePause() }.disabled(model.gateRunning || model.streamEnded)
                 Button("完成并预览") { Task { await model.finish() } }.buttonStyle(.borderedProminent).disabled(model.gateRunning)
                 Spacer()
                 Menu {

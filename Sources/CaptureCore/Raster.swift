@@ -4,10 +4,11 @@ import ImageIO
 import UniformTypeIdentifiers
 
 public enum CaptureError: Error, LocalizedError, Sendable {
-    case invalidImage, geometryChanged, ambiguous, noOverlap, resourceLimit, storage
+    case invalidImage, staleFrame, geometryChanged, ambiguous, noOverlap, resourceLimit, storage
     public var errorDescription: String? {
         switch self {
         case .invalidImage: "无法读取画面"
+        case .staleFrame: "画面已过期，请回滚到已确认的内容再继续"
         case .geometryChanged: "窗口尺寸或显示比例变化，请结束当前结果并重新框选"
         case .ambiguous: "位移不唯一：请回滚到已确认位置，或保存局部结果"
         case .noOverlap: "缺少可靠重叠：请缓慢回滚补采，或保存局部结果"
@@ -19,6 +20,17 @@ public enum CaptureError: Error, LocalizedError, Sendable {
 
 /// Canonical, top-to-bottom, premultiplied RGBA8 in sRGB.
 public struct Raster: Sendable, Equatable {
+    /// Limit each materialized preview or clipboard image by both area and row count.
+    public static func outputRows(width: Int) -> Int {
+        guard width > 0 else { return 0 }
+        return min(65_536, 8_000_000 / width)
+    }
+
+    public static func previewRows(width: Int, height: Int) -> Int {
+        let limit = outputRows(width: width)
+        return height <= limit ? height : min(16_384, limit)
+    }
+
     public let width: Int
     public let height: Int
     public let bytes: [UInt8]

@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published var shortcut = UserDefaults.standard.integer(forKey:"shortcut")
     @Published var trimTop = 0
     @Published var trimBottom = 0
+    @Published private(set) var sealedWidth = 0
     @Published var exporting = false
     @Published var gateRunning = false
     var gateID = UUID()
@@ -46,19 +47,23 @@ final class AppModel: ObservableObject {
     private var acceptedAt: Double = 0
     private let hotKey = HotKey()
     private var lastTime = -Double.infinity
+    private var resumeTime = -Double.infinity
     private var lastSequence: UInt64 = 0
     private var metadata: (CGRect, Double, Double)?
     private var watchdog: Task<Void,Never>?
+    @Published private(set) var streamEnded = false
     private var recoveryAttempts = 0
 
+    var canStartScrolling: Bool { (region?.width ?? 0) >= 32 && (region?.height ?? 0) >= 64 }
     var resultHeight: Int { session == nil ? (bitmap?.height ?? 0) : (exportRange?.count ?? confirmedHeight) }
-    var resultRequiresParts: Bool { (bitmap?.width ?? 0) * resultHeight > 8_000_000 }
+    var hasResult: Bool { !running && !selecting && (bitmap != nil || sealedWidth > 0) }
+    var resultRequiresParts: Bool { resultHeight > Raster.outputRows(width: sealedWidth > 0 ? sealedWidth : bitmap?.width ?? 0) }
     var canTrimResult: Bool {
-        trimTop >= 0 && trimBottom >= 0 && trimTop < resultHeight && trimBottom < resultHeight - trimTop && (trimTop > 0 || trimBottom > 0)
+        bitmap != nil && trimTop >= 0 && trimBottom >= 0 && trimTop < resultHeight && trimBottom < resultHeight - trimTop && (trimTop > 0 || trimBottom > 0)
     }
     var resultSummary: String {
-        guard let bitmap else { return "" }
-        let dimensions = "\(bitmap.width) × \(resultHeight) px"
+        let width = sealedWidth > 0 ? sealedWidth : bitmap?.width ?? 0
+        let dimensions = "\(width) × \(resultHeight) px"
         guard session != nil else { return "\(dimensions) · 单张截图" }
         return "\(dimensions) · \(unresolved ? "仅包含已确认的部分内容" : "本次采集的连续范围")。结束采集不代表到达文档底部。"
     }
@@ -75,7 +80,7 @@ final class AppModel: ObservableObject {
     func selectionChanged() {
         guard !running else { return }
         generation = UUID(); busy = false; snapshot = nil; snapshotWindow = nil; region = nil; selecting = false
-        bitmap = nil; unresolved = false; automaticNotice = nil
+        sealedWidth = 0; bitmap = nil; unresolved = false; automaticNotice = nil
     }
     func selectWindow(_ id: UInt32, fromGate: Bool = false) { guard !busy, !running, !gateRunning || fromGate else { return }; selected = id; selectionChanged() }
     func configureShortcut() {
@@ -131,22 +136,27 @@ final class AppModel: ObservableObject {
     }
     func start(fromGate: Bool = false) async {
         guard !busy, !running, !gateRunning || fromGate, let snapshotWindow, let snapshot, snapshotWindow.windowID == selected else { return }
+        guard canStartScrolling, let frozenRegion = region else {
+            status = "请框选至少 32 × 64 像素的正文，再开始滚动截图。"
+            return
+        }
         let token = UUID(); generation = token; busy = true
         permit.invalidate(); permit = CommitPermit(); attempt += 1; recoveryAttempts = 0
         defer { if token == generation { busy = false } }
-        let frozenRegion = region
         do {
             let fresh = try await ScreenSource.windows()
             guard token == generation else { return }
-            guard let window = fresh.first(where: { $0.windowID == snapshotWindow.windowID }), window.frame == snapshotWindow.frame else { throw CaptureError.geometryChanged }
+            guard let owner = snapshotWindow.owningApplication?.processID,
+                  let window = fresh.first(where: { $0.windowID == snapshotWindow.windowID }),
+                  window.owningApplication?.processID == owner, window.frame == snapshotWindow.frame else { throw CaptureError.geometryChanged }
             let engine = try CaptureSession(); let live = try LiveStream(window:window)
-            source = live; session = engine; lastTime = -Double.infinity; lastSequence = 0; metadata = nil
+            source = live; session = engine; resumeTime = -.infinity; lastTime = -Double.infinity; lastSequence = 0; metadata = nil
             try await live.start()
             guard token == generation else { await live.stop(); return }
-            running = true; paused = false; unresolved = false; selecting = false; confirmedHeight = 0; seams = 0
+            streamEnded = false; running = true; paused = false; unresolved = false; selecting = false; confirmedHeight = 0; seams = 0
             automaticNotice = nil
             exportRange = nil; trimTop = 0; trimBottom = 0
-            activeWindow = window; activeRegion = frozenRegion ?? CGRect(x:0,y:0,width:snapshot.width,height:snapshot.height)
+            activeWindow = window; activeRegion = frozenRegion
             activeScale = CGFloat(snapshot.width)/window.frame.width
             status = "将鼠标放在正文中缓慢向下滚动；当前范围由你结束，不推断文档到底。"
             hud.show(model:self)
@@ -155,14 +165,14 @@ final class AppModel: ObservableObject {
                 do { try await Task.sleep(for:.seconds(8)) } catch { return }
                 guard let self, token == self.generation, self.running else { return }
                 if self.confirmedHeight == 0 {
+                    self.permit.invalidate(); self.attempt += 1
                     self.paused = true; self.unresolved = true
                     self.status = "8 秒内未收到有效帧，请检查权限/目标可见性，完成后重新开始。"
                 }
                 do { try await Task.sleep(for:.seconds(592)) } catch { return }
                 guard token == self.generation, self.running else { return }
                 self.unresolved = true
-                await self.finish()
-                self.status = "达到 10 分钟会话上限；已保留确认范围，请保存。"
+                await self.finish(limitReached: true)
             }
             if window.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier {
                 FixtureHost.shared.window?.makeKeyAndOrderFront(nil)
@@ -179,8 +189,9 @@ final class AppModel: ObservableObject {
                         self.lastTime = frame.time
                         let dropped = self.lastSequence > 0 && frame.sequence != self.lastSequence + 1
                         self.lastSequence = frame.sequence
-                        if self.paused { continue }
+                        if self.paused || frame.time < self.resumeTime { continue }
                         if dropped {
+                            self.stopAutomatic()
                             self.permit.invalidate(); self.permit = CommitPermit(); self.attempt += 1
                             self.paused = true; self.unresolved = true
                             self.status = "处理队列丢帧，连续性需要重新确认；请回滚补采后继续。"
@@ -202,7 +213,11 @@ final class AppModel: ObservableObject {
                                 guard metadata.0 == frame.contentRect, metadata.1 == frame.scale, metadata.2 == frame.contentScale else { throw CaptureError.geometryChanged }
                             } else { self.metadata = (frame.contentRect,frame.scale,frame.contentScale) }
                             let cropped = try self.cropped(frame.raster,region:frozenRegion)
-                            let coverage = try await engine.accept(cropped,permit:framePermit)
+                            let coverage = try await engine.accept(cropped,permit:framePermit, checkFreshness: {
+                                guard CMClockGetTime(CMClockGetHostTimeClock()).seconds - frame.time <= 1.5 else {
+                                    throw CaptureError.staleFrame
+                                }
+                            })
                             guard token == self.generation, !Task.isCancelled else { break }
                             guard frameAttempt == self.attempt, !self.paused else { continue }
                             self.confirmedHeight = coverage.height; self.seams = coverage.seams
@@ -220,42 +235,57 @@ final class AppModel: ObservableObject {
                         }
                     }
                 } catch {
-                    if token == self.generation { self.paused = true; self.unresolved = true; self.status = "采集已中断，请完成保存局部结果，再重新采集。" }
+                    if token == self.generation {
+                        self.stopAutomatic()
+                        self.streamEnded = true; self.paused = true; self.unresolved = true
+                        self.status = "采集已中断。请点“完成并预览”保留已确认的内容，再重新采集。"
+                    }
                 }
             }
         } catch {
-            if token == generation { status = error.localizedDescription; if let source { await source.stop() }; source = nil; session = nil }
+            guard token == generation else { return }
+            status = error.localizedDescription
+            let oldSource = source
+            source = nil; session = nil
+            await oldSource?.stop()
         }
     }
     func togglePause() {
-        guard running, !gateRunning else { return }
+        guard running, !gateRunning, !streamEnded else { return }
         stopAutomatic()
         permit.invalidate(); permit = CommitPermit(); attempt += 1
         if paused {
+            resumeTime = CMClockGetTime(CMClockGetHostTimeClock()).seconds
             recoveryAttempts += 1
             guard recoveryAttempts <= 32 else { status = "达到 32 次恢复上限，请完成并保存当前结果。"; return }
         }
         paused.toggle()
         status = paused ? "已暂停；继续时仍须与已确认画面重叠。" : "请缓慢回滚到已确认内容；可靠匹配后自动恢复。"
     }
-    func finish(fromGate: Bool = false) async {
+    func finish(fromGate: Bool = false, limitReached: Bool = false) async {
         guard running, !gateRunning || fromGate, let session else { return }
         stopAutomatic()
         let token = UUID(); generation = token; running = false; busy = true
         permit.invalidate(); watchdog?.cancel(); watchdog = nil
         captureTask?.cancel(); captureTask = nil; hud.close()
-        if let source { await source.stop() }; source = nil
+        let oldSource = source
+        await oldSource?.stop()
         guard token == generation else { return }
+        source = nil
         await session.seal()
         do {
             let size = await session.dimensions()
+            guard token == generation else { return }
             guard size.height > 0 else { throw CaptureError.invalidImage }
-            let preview = try await session.read(y:0,height:min(size.height,max(1,8_000_000/size.width)))
+            sealedWidth = size.width; confirmedHeight = size.height
+            let preview = try await session.read(y:0,height:Raster.previewRows(width: size.width, height: size.height))
             guard token == generation else { return }
             bitmap = preview; selecting = false; confirmedHeight = size.height
             status = "\(unresolved ? "局部结果 · 未确认尾部" : "连续采集 · 用户结束（未确认文档尾部）") · \(size.width) × \(size.height) px\(preview.height < size.height ? "；预览仅显示首片，保存包含全部分片" : "")"
-        } catch { if token == generation { status = error.localizedDescription; bitmap = nil } }
-        if token == generation { busy = false }
+            if limitReached { status = "达到 10 分钟上限。" + status }
+        } catch { if token == generation { status = sealedWidth > 0 ? "预览读取失败，已确认的内容仍可尝试保存：" + error.localizedDescription : error.localizedDescription; bitmap = nil } }
+        guard token == generation else { return }
+        busy = false
         showMain()
     }
     func cancel() {
@@ -267,7 +297,7 @@ final class AppModel: ObservableObject {
         let oldSource = source, oldSession = session
         source = nil; session = nil; running = false; busy = false; paused = false; hud.close()
         bitmap = nil; snapshot = nil; snapshotWindow = nil; selecting = false
-        region = nil; unresolved = false; confirmedHeight = 0; seams = 0; exportRange = nil
+        sealedWidth = 0; region = nil; unresolved = false; confirmedHeight = 0; seams = 0; exportRange = nil
         trimTop = 0; trimBottom = 0; automaticNotice = nil
         let cleanupStatus = "正在清理上一次截图；可以选择窗口开始下一张。"
         status = cleanupStatus
@@ -289,7 +319,7 @@ final class AppModel: ObservableObject {
         automatic = false
     }
     func trimResult() async {
-        guard !busy, !running, !selecting, !gateRunning, let bitmap else { return }
+        guard !busy, hasResult, !gateRunning, let bitmap else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -305,7 +335,7 @@ final class AppModel: ObservableObject {
             }
             let range = (base.lowerBound+trimTop)..<(base.upperBound-trimBottom)
             let preview: Raster
-            if let session { preview = try await session.read(y:range.lowerBound,height:min(range.count,8_000_000/width)) }
+            if let session { preview = try await session.read(y:range.lowerBound,height:Raster.previewRows(width: width, height: range.count)) }
             else { preview = try bitmap.crop(y:range.lowerBound,height:range.count) }
             guard token == generation else { return }
             self.bitmap = preview; exportRange = session == nil ? nil : range
@@ -314,7 +344,7 @@ final class AppModel: ObservableObject {
         } catch { if token == generation { status = error.localizedDescription } }
     }
     func startAutomatic() {
-        guard running, !paused, !automatic, !gateRunning, seams >= 3, let activeWindow, let activeRegion else {
+        guard running, !paused, !unresolved, !automatic, !gateRunning, seams >= 3, let activeWindow, let activeRegion else {
             automaticNotice = "先在当前正文手动完成至少 3 次拼接，再尝试自动滚动。"; return
         }
         guard ScrollDriver.permission() else {
@@ -333,7 +363,7 @@ final class AppModel: ObservableObject {
         })
     }
     func beginSave() {
-        guard !busy, !running, !selecting, !exporting, !gateRunning, bitmap != nil else { return }
+        guard !busy, !running, !selecting, !exporting, !gateRunning, hasResult else { return }
         exporting = true
         exportTask = Task { [weak self] in
             guard let self else { return }
@@ -343,7 +373,7 @@ final class AppModel: ObservableObject {
     }
     func cancelExport() { exportTask?.cancel() }
     private func save() async {
-        guard !busy, !running, !selecting, let bitmap else { return }
+        guard !busy, hasResult else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -351,7 +381,7 @@ final class AppModel: ObservableObject {
             if let session {
                 let size = await session.dimensions()
                 let range = exportRange ?? 0..<size.height
-                if size.width*range.count > 8_000_000 {
+                if range.count > Raster.outputRows(width: size.width) {
                     try Task.checkCancellation()
                     guard token == generation else { return }
                     let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
@@ -364,7 +394,7 @@ final class AppModel: ObservableObject {
                     NSWorkspace.shared.activateFileViewerSelecting([url]); return
                 }
                 image = try await session.read(y:range.lowerBound,height:range.count)
-            } else { image = bitmap }
+            } else if let bitmap { image = bitmap } else { throw CaptureError.invalidImage }
             guard token == generation else { return }
             try Task.checkCancellation()
             let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = unresolved ? "ScrollCapture-partial.png" : "ScrollCapture.png"
@@ -376,7 +406,7 @@ final class AppModel: ObservableObject {
         catch { if token == generation { status = "保存失败，结果保留，可重试：\(error.localizedDescription)" } }
     }
     func copy() async {
-        guard !busy, !running, !selecting, !gateRunning, let bitmap else { return }
+        guard !busy, hasResult, !gateRunning else { return }
         let token = generation; busy = true
         defer { if token == generation { busy = false } }
         do {
@@ -384,9 +414,9 @@ final class AppModel: ObservableObject {
             if let session {
                 let size = await session.dimensions()
                 let range = exportRange ?? 0..<size.height
-                guard size.width*range.count <= 8_000_000 else { status = "整图超过剪贴板预算，请保存有序分片；未复制。"; return }
+                guard range.count <= Raster.outputRows(width: size.width) else { status = "整图超过剪贴板预算，请保存有序分片；未复制。"; return }
                 image = try await session.read(y:range.lowerBound,height:range.count)
-            } else { image = bitmap }
+            } else if let bitmap { image = bitmap } else { throw CaptureError.invalidImage }
             let png = try image.png()
             guard token == generation else { return }
             NSPasteboard.general.clearContents()

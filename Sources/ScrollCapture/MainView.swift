@@ -9,7 +9,7 @@ struct MainView: View {
     @State private var confirmDiscard = false
     @State private var showCrop = false
 
-    private var hasResult: Bool { model.bitmap != nil && !model.selecting && !model.running }
+    private var hasResult: Bool { model.hasResult }
     private var step: Int { hasResult ? 3 : (model.bitmap != nil || model.running ? 2 : 1) }
 
     var body: some View {
@@ -40,7 +40,7 @@ struct MainView: View {
                 Text("把长内容，留在一张图里").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { if model.bitmap != nil || model.running { confirmDiscard = true } else { reset() } } label: {
+            Button { if hasResult || model.bitmap != nil || model.running { confirmDiscard = true } else { reset() } } label: {
                 Label("新建截图", systemImage: "plus")
             }.disabled(model.busy || model.gateRunning)
             Button { showHelp.toggle() } label: { Image(systemName: "questionmark.circle") }
@@ -130,9 +130,9 @@ struct MainView: View {
             Button { Task { await model.start() } } label: {
                 Label("开始滚动截图", systemImage: "arrow.down.to.line").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).controlSize(.large)
-                .disabled(model.busy || model.region == nil)
-            if model.region == nil {
-                Text("先拖选正文，即可开始滚动截图。")
+                .disabled(model.busy || !model.canStartScrolling)
+            if !model.canStartScrolling {
+                Text("请框选至少 32 × 64 像素的正文。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Button(model.region == nil ? "截取整个窗口" : "截取所选区域") { model.regionScreenshot() }
@@ -154,7 +154,7 @@ struct MainView: View {
             Button { Task { await model.finish() } } label: {
                 Label("完成并预览", systemImage: "checkmark").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).controlSize(.large).disabled(model.busy || model.gateRunning)
-            Button(model.paused ? "继续采集" : "暂停采集") { model.togglePause() }.disabled(model.gateRunning)
+            Button(model.paused ? "继续采集" : "暂停采集") { model.togglePause() }.disabled(model.gateRunning || model.streamEnded)
             Divider()
             Text("自动滚动 · 实验功能").font(.callout.weight(.semibold))
             Text("尚未通过实际自动采集验收。建议使用手动滚动；尝试自动前需手动完成 3 次拼接。")
@@ -233,7 +233,7 @@ struct MainView: View {
                             }.padding(16)
                         }
                     }
-                } else { welcome }
+                } else if hasResult { Text("预览暂时不可用，可从左侧保存已确认内容。") } else { welcome }
             }.overlay(RoundedRectangle(cornerRadius: 14).stroke(.primary.opacity(0.06)))
             if let bitmap = model.bitmap {
                 HStack {
@@ -289,7 +289,7 @@ struct MainView: View {
                     Text("仅供开发检查；内置字体对照尚未通过严格像素验收。")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(.top, 8)
-            }.disabled(model.bitmap != nil || model.busy || model.running || model.gateRunning)
+            }.disabled(hasResult || model.bitmap != nil || model.busy || model.running || model.gateRunning)
         }.padding(20).frame(width: 320)
     }
 

@@ -22,10 +22,10 @@ final class ScrollDriver {
                progress: @escaping @MainActor () -> (height:Int,time:Double,valid:Bool),
                stopped: @escaping @MainActor (String) -> Void) {
         stop(); let token = id
-        let mask: NSEvent.EventTypeMask = [.scrollWheel,.leftMouseDown,.rightMouseDown,.keyDown]
+        let mask: NSEvent.EventTypeMask = [.scrollWheel,.leftMouseDown,.rightMouseDown,.otherMouseDown,.keyDown]
         let userInput: @MainActor (NSEvent) -> Void = { [weak self] event in
-            guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.eventTag else { return }
-            self?.stop(); stopped("检测到用户接管，已切回手动。")
+            guard let self, token == self.id, event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.eventTag else { return }
+            self.stop(); stopped("检测到用户接管，已切回手动。")
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching:mask) { event in
             MainActor.assumeIsolated { userInput(event) }; return event
@@ -58,7 +58,9 @@ final class ScrollDriver {
                         event.setIntegerValueField(.eventSourceUserData,value:Self.eventTag)
                         event.postToPid(pid)
                     }
-                } catch { self.stop(); stopped("目标不可用，已切回手动。"); return }
+                } catch {
+                    guard token == self.id else { return }
+                    self.stop(); stopped("目标不可用，已切回手动。"); return }
                 do { try await Task.sleep(for:.milliseconds(100)) } catch { return }
             }
         }

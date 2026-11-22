@@ -20,10 +20,13 @@ final class StreamReceiver: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     init(_ continuation: AsyncThrowingStream<CapturedFrame, Error>.Continuation) { self.continuation = continuation }
     func stream(_ stream: SCStream, didStopWithError error: Error) { continuation.finish(throwing: error) }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid,
+        guard type == .screen else { return }
+        guard sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let info = attachments.first,
-              let rawStatus = info[.status] as? Int, let status = SCFrameStatus(rawValue:rawStatus) else { return }
+              let rawStatus = info[.status] as? Int, let status = SCFrameStatus(rawValue:rawStatus) else {
+            continuation.finish(throwing: CaptureError.invalidImage); return
+        }
         if status == .idle || status == .started { return }
         guard status == .complete, let pixelBuffer = sampleBuffer.imageBuffer else {
             continuation.finish(throwing:CaptureError.geometryChanged); return
@@ -52,7 +55,7 @@ final class LiveStream {
     private let receiver: StreamReceiver
     private let stream: SCStream
     private var startTask: Task<Void,Error>?
-    private var stopping = false
+    private var stopTask: Task<Void,Never>?
     init(window: SCWindow) throws {
         let pair = AsyncThrowingStream<CapturedFrame, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
         frames = pair.stream; receiver = StreamReceiver(pair.continuation)
@@ -78,9 +81,13 @@ final class LiveStream {
         receiver.continuation.finish()
         // A cancelled preparation cannot start a capture after its stop has already returned.
         if let startTask { _ = try? await startTask.value }
-        guard !stopping else { return }; stopping = true
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void,Never>) in
-            stream.stopCapture { _ in continuation.resume() }
+        if let stopTask { await stopTask.value; return }
+        let task = Task { @MainActor in
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void,Never>) in
+                stream.stopCapture { _ in continuation.resume() }
+            }
         }
+        stopTask = task
+        await task.value
     }
 }

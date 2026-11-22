@@ -44,12 +44,14 @@ public enum Registration {
     }
 
     public static func validate(_ a: Raster, y ay: Int, _ b: Raster, y by: Int, rows: Int) throws {
-        guard a.width == b.width, rows > 0, ay >= 0, by >= 0, ay+rows <= a.height, by+rows <= b.height else { throw CaptureError.geometryChanged }
+        guard a.width == b.width, rows > 0, ay >= 0, by >= 0, ay <= a.height, by <= b.height, rows <= a.height-ay, rows <= b.height-by else { throw CaptureError.geometryChanged }
         var total: Int64 = 0, bad = 0
         for row in 0..<rows {
             var rowTotal = 0
             for x in 0..<a.width {
                 let i = ((ay+row)*a.width+x)*4, j = ((by+row)*b.width+x)*4
+                // RGB is premultiplied. Black pixels can differ visibly by alpha alone.
+                guard a.bytes[i+3] == b.bytes[j+3] else { throw CaptureError.noOverlap }
                 for c in 0..<3 {
                     let d = abs(Int(a.bytes[i+c])-Int(b.bytes[j+c])); rowTotal += d
                     if d > 12 { bad += 1 }
