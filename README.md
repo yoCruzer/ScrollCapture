@@ -2,7 +2,7 @@
 
 原生 macOS 截图与垂直滚动截图工具，Swift 6 + SwiftUI/AppKit + ScreenCaptureKit，macOS 15+，本地处理。
 
-新手体验改版已完成：三步操作、范围确认、结果保存与权限引导；问题清单见 [UX_REVIEW](Docs/UX_REVIEW.md)。产品源码fd91e23，新版实际GUI、原生多视口/恢复及独立像素复核通过，状态为 **READY_FOR_OWNER_DEVICE_GATE 手动候选**；**F06自动仍未通过，不称完整V1**。准确版本与证据以 [Docs/STATUS.md](Docs/STATUS.md) 为准，限制见 [KNOWN_ISSUES](Docs/KNOWN_ISSUES.md)。开发分支 `codex/scroll-capture-v1`，产品 [Draft PR #2](https://github.com/yoCruzer/ScrollCapture/pull/2)；启动文档 [Draft PR #1](https://github.com/yoCruzer/ScrollCapture/pull/1) 保留，不自动合并或发布。
+测试前审查修复版 `b916dcd` 已提供 Apple Silicon 和 Intel 两个 macOS 15+ 测试包。新版真实多视口采集与缺口恢复逐像素通过，当前等待 Owner 真机测试，F06 自动仍处于实验阶段。包路径、证据及限制见 [STATUS](Docs/STATUS.md)，人工操作见 [测试 SOP](Docs/OWNER_TEST_SOP.md)。
 
 ```sh
 bash Scripts/build-app.sh

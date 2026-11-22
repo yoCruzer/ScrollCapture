@@ -1,6 +1,18 @@
 # 当前状态
 
-更新日期：2026-11-15（Asia/Shanghai）
+更新日期：2026-11-22（Asia/Shanghai）
+
+**READY_FOR_OWNER_DEVICE_GATE（手动候选）**。测试前审查修复版源码为 `b916dcdb6c74f756ad5fa8d1154e27486bf83509`。用户重新授予本机 arm64 App 录屏权限后，真实受控窗口手动采集已通过。F06 自动仍未通过。
+
+- 本机交付 `build/ScrollCapture.app`，压缩包 `build/ScrollCapture-b916dcd-arm64.zip`，ZIP SHA256 `f00e2efe9ba7fb657aa348bd37e2a6e5c7b46e05b945caecce19f689fb6dbfc9`。
+- Intel 笔记本请传输 `build/ScrollCapture-b916dcd-intel.zip`，ZIP SHA256 `f1acd503313ccea3677d579f8c210dea1b789dd7d4b94941ecde88418b372a6b`。两包分别验证 arm64/x86_64、Mach-O 最低系统 15.0、签名和 clean 来源。Intel 真机启动、显示效果与 TCC 等待 Owner 反馈。
+- 本机 release 27 项通过（23 核心、4 流程），环境 macOS 27.0.1、Xcode 27.2、Swift 6.4.2。审查范围、复现和剩余风险见 [REVIEW](REVIEW.md)，设备步骤见 [SOP](OWNER_TEST_SOP.md)。
+
+- 新版真实 GUI 使用 718×513 选区。独立宿主 y=0/118/236/354 后确认 867 像素，快滚到 946 触发暂停，回到 354 继续到 472。最终 4 次拼接，保存 718×985 PNG；独立原图 (18,22) 处对比 0 坏行、最大通道误差 0。录屏授权与开发侧操作不计作 Owner 人工通过。
+
+- [CI 45006195951](https://github.com/yoCruzer/ScrollCapture/actions/runs/45006195951) 已完成，回归、App 构建与签名检查均成功。
+
+## fd91e23 历史交付记录
 
 **READY_FOR_OWNER_DEVICE_GATE — 新手体验改版已完成，真实GUI、原生多视口/恢复及独立像素复核通过。F06仍未通过，不是完整V1、不是OWNER_VERIFIED。**
 

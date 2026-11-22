@@ -90,3 +90,10 @@
 ## 2026-11-20 Owner人工真机测试说明
 
 用户询问当前是否进入人工真机测试及明确SOP。核对干净HEAD a61287f与实际App内fd91e23 clean身份，新增Docs/OWNER_TEST_SOP.md，包含无需构建的启动路径、非敏感浏览器夹具、A–F手动核心操作/通过标准、实际应用补测、独立可选F06诊断及反馈模板。BUILD_AND_VALIDATE与STATUS增加入口。未操作用户桌面、未重建产品、未改变既有门禁；纯文档按内容与链接检查，不重复24项代码测试。
+
+
+## 2026-11-22 测试前审查与双架构包
+
+产品 b916dcdb6c74f756ad5fa8d1154e27486bf83509。具体发现与影响见 REVIEW。当日干净构建运行 swift test -c release --disable-sandbox，23 核心 + 4 工作流，零失败。新增回归覆盖窄长图最后一个分片、过期首帧/后续帧不能提交、透明度变化及极端整数。运行 bash Scripts/build-app.sh 与 bash Scripts/build-app.sh intel，codesign --verify --strict、lipo -archs 和 xcrun vtool -show-build 确认两架构及 minos 15.0。两包记录同一 clean SHA。实际 App 启动后展示录屏权限面板。真实采集和 Intel 笔记本交互留待授权及实机反馈。
+
+用户删除旧授权后重启 App 触发系统设置，重新开启后窗口列表与 SCK 采集正常。718×513 合成选区快滚暂停、回滚恢复并通过 4 次拼接，GUI 保存 718×985。swift Scripts/compare-images.swift 对已知独立 oracle(18,22) 返回 badRows=0、maxChannelError=0。恢复手动候选 READY_FOR_OWNER_DEVICE_GATE。Intel 实机、并发 stop 的真实竞态、F06 自动与新版 Safari 全流程 NOT_RUN。
