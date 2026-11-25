@@ -2,14 +2,15 @@
 
 更新日期：2026-11-26（Asia/Shanghai）
 
-**AWAITING_PERMISSION**。Owner 在 M3 Pro 上报告「预览」滚动测试图始终 0 次拼接。本机使用旧交付 App 和系统「预览」复现白底长 PNG 首帧后即提示位移不唯一。实际滚动后长度仍冻结在 741 px、0 次拼接。对照的彩色纹理 PNG 可新增 156 px。旧候选结论已撤回。
+**READY_FOR_OWNER_DEVICE_GATE（手动修复版）**。Owner 在 M3 Pro 上报告「预览」滚动测试图始终 0 次拼接。本机使用旧交付 App 和系统「预览」复现白底长 PNG 首帧后即提示位移不唯一。实际滚动后长度仍冻结在 741 px、0 次拼接。对照的彩色纹理 PNG 可新增 156 px。旧候选结论已撤回。
 
 修复源码 `2ec99504203cb4323e0f28bd4fff6b0a916f75e6`。相同首帧重绘仅作为无新证据处理；稀疏取样同分时复核完全相同的重叠并排除所有可接受的替代位移。短暂视觉失败冻结长度，在两秒内从最后确认位置核对新帧。过期、队列丢帧和尺寸变化仍暂停。
 
 - 本机 macOS 27.0.1 arm64 / Xcode 27.2 / Swift 6.4.2，release 30/30 通过。白底长图离线回放从 741 px 到 1541 px，共 166 次拼接，34 帧被拒，最终独立原图对比最大通道误差 0。独立 review 与剩余边界见 [REVIEW](REVIEW.md)。
 - M3 Pro 使用 `build/ScrollCapture-2ec9950-arm64.zip`（SHA256 `77ea2ddc6c93737b459dd22e503bceb7a550acfedf489e083bcf16591c44808d`）。Intel 使用 `build/ScrollCapture-2ec9950-intel.zip`（SHA256 `f1b39ba131a959efc3aa9a951e915f12e69274250fd0b0ff6e2af9a166bb5e1d`）。两包解压后验证签名、架构、macOS 15.0 最低版本及 clean 源码身份。
 - 产品源码的 [独立 CI](https://github.com/yoCruzer/ScrollCapture/actions/runs/45724426824) 覆盖回归、构建和签名。
-- 本机新 App 已启动，读取窗口时提示需要重新授权。新版「预览」真实采集、M3 Pro 原图复测及 Intel 实机操作待验，F06 自动未通过。操作见 [人工测试 SOP](OWNER_TEST_SOP.md)。
+- 新版真实系统「预览」已通过。Owner 为本机交付 App 重新授权后，以实际大小打开同一白底长图并框选 588×741。连续 13 次新增 73 px，GUI 保存 588×1690 PNG。独立复核在原图 (56,2618) 唯一匹配，3,974,880 个 RGBA 字节零差异，纵向偏一行的正负两个方向各有 1057 坏行。
+- 同一交付 App 的快滚检查先确认 814 px。跳到远处后边界冻结，超过两秒再次移动时暂停；回到旧位置继续，新增 73 px 后保存 588×887，逐字节比对原图一致。M3 Pro 上的原图和 Intel 实机仍待 Owner 复测，F06 自动未通过。操作见 [人工测试 SOP](OWNER_TEST_SOP.md)。
 
 ## 2026-11-22 历史手动候选
 
