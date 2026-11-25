@@ -97,3 +97,12 @@
 产品 b916dcdb6c74f756ad5fa8d1154e27486bf83509。具体发现与影响见 REVIEW。当日干净构建运行 swift test -c release --disable-sandbox，23 核心 + 4 工作流，零失败。新增回归覆盖窄长图最后一个分片、过期首帧/后续帧不能提交、透明度变化及极端整数。运行 bash Scripts/build-app.sh 与 bash Scripts/build-app.sh intel，codesign --verify --strict、lipo -archs 和 xcrun vtool -show-build 确认两架构及 minos 15.0。两包记录同一 clean SHA。实际 App 启动后展示录屏权限面板。真实采集和 Intel 笔记本交互留待授权及实机反馈。
 
 用户删除旧授权后重启 App 触发系统设置，重新开启后窗口列表与 SCK 采集正常。718×513 合成选区快滚暂停、回滚恢复并通过 4 次拼接，GUI 保存 718×985。swift Scripts/compare-images.swift 对已知独立 oracle(18,22) 返回 badRows=0、maxChannelError=0。恢复手动候选 READY_FOR_OWNER_DEVICE_GATE。Intel 实机、并发 stop 的真实竞态、F06 自动与新版 Safari 全流程 NOT_RUN。
+
+
+## 2026-11-26 系统「预览」滚动仅截首屏
+
+旧交付 b916dcd 在真实 SCK 下，实际大小的白底正文框选 588×741，未开始滚动就已暂停报位移不唯一。滚动条移动仍 0 次拼接；同一旧版对高纹理图由 739 增至 895 px。旧 SOP 采用高纹理标尺、分步停顿，缺少普通白底图的首帧重绘。Owner 原图和具体触发帧未知。
+
+产品 2ec99504203cb4323e0f28bd4fff6b0a916f75e6。隔离 cda1fac，运行 `swift test -c release --disable-sandbox --filter testSlowScrollOnWhiteListUsesInkBetweenSampleColumns`，旧版 1/1 因 ambiguous 失败，修复版通过。最终 `swift test -c release --disable-sandbox` 24 核心 + 6 工作流通过，涵盖真歧义、间隙、重复重绘、限时恢复、冻结、取消和过期提交。生成长图命令 `swift Scripts/make-preview-fixture.swift artifacts/preview-first-screen/article.png`。以原 PNG 的 (35,2673) 处 588×741 为首帧，重复一次后按 4 px 递增共 800 px，166 次拼接、34 帧拒绝。执行 `swift Scripts/compare-images.swift artifacts/preview-first-screen/replay.png artifacts/preview-first-screen/article.png 35 2673 588 1541` 全图 0 坏行。此项覆盖离线配准及账本，不含 macOS 取帧。
+
+`bash Scripts/build-app.sh`、`bash Scripts/build-app.sh intel`，解压交付 ZIP 后 `codesign --verify --strict`、`file`、`xcrun vtool -show-build` 通过。新版实际 App 启动，当前机器提示需重新授予录屏权限。当前实测与未测边界以 STATUS 为准。

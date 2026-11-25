@@ -2,7 +2,7 @@
 
 原生 macOS 截图与垂直滚动截图工具，Swift 6 + SwiftUI/AppKit + ScreenCaptureKit，macOS 15+，本地处理。
 
-测试前审查修复版 `b916dcd` 已提供 Apple Silicon 和 Intel 两个 macOS 15+ 测试包。新版真实多视口采集与缺口恢复逐像素通过，当前等待 Owner 真机测试，F06 自动仍处于实验阶段。包路径、证据及限制见 [STATUS](Docs/STATUS.md)，人工操作见 [测试 SOP](Docs/OWNER_TEST_SOP.md)。
+首屏零拼接修复版 `2ec9950` 已提供 Apple Silicon 和 Intel 两个 macOS 15+ 测试包。当前验证状态、包路径及限制见 [STATUS](Docs/STATUS.md)，「预览」长图复测步骤见 [测试 SOP](Docs/OWNER_TEST_SOP.md)。
 
 ```sh
 bash Scripts/build-app.sh
