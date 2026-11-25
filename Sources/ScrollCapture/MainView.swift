@@ -145,11 +145,11 @@ struct MainView: View {
 
     private var captureControls: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(model.paused ? "采集已暂停" : "正在采集", systemImage: model.paused ? "pause.circle" : "record.circle")
+            Label(model.paused ? "采集已暂停" : model.unresolved ? "等待重新匹配" : "正在采集", systemImage: model.paused ? "pause.circle" : "record.circle")
                 .font(.headline).foregroundStyle(model.paused ? Color.orange : Color.accentColor)
             Text("\(model.confirmedHeight) px").font(.system(size: 30, weight: .semibold, design: .rounded)).monospacedDigit()
             Text("已确认的连续长度 · \(model.seams) 次拼接").font(.caption).foregroundStyle(.secondary)
-            Text(model.paused ? (model.unresolved ? "向上滚回刚才截到的内容，再点继续。也可以直接完成，保存已确认部分。" : "回到目标窗口，点继续后缓慢向下滚动。") : "切回目标窗口，鼠标放在正文内，缓慢向下滚动。")
+            Text(model.paused ? (model.unresolved ? "向上滚回刚才截到的内容，再点继续。也可以直接完成，保存已确认部分。" : "回到目标窗口，点继续后缓慢向下滚动。") : (model.unresolved ? model.status : "切回目标窗口，鼠标放在正文内，缓慢向下滚动。"))
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
             Button { Task { await model.finish() } } label: {
                 Label("完成并预览", systemImage: "checkmark").frame(maxWidth: .infinity)

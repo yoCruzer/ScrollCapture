@@ -23,14 +23,14 @@ struct HUDView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(model.paused ? "已暂停" : model.automatic ? "自动 · 实验功能" : "手动滚动", systemImage: model.paused ? "pause.circle.fill" : "record.circle")
+                Label(model.paused ? "已暂停" : model.unresolved ? "等待重新匹配" : model.automatic ? "自动 · 实验功能" : "手动滚动", systemImage: model.paused ? "pause.circle.fill" : "record.circle")
                     .foregroundStyle(model.paused ? Color.orange : Color.accentColor)
                 Spacer()
                 Text("\(model.confirmedHeight) px · \(model.seams) 次拼接").monospacedDigit()
             }.font(.callout.weight(.semibold))
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(model.paused ? (model.unresolved ? "向上滚回已截取的内容，再点继续；也可完成并保存局部结果。" : "已暂停。准备好后点继续，再缓慢向下滚动。") : "在目标窗口正文内缓慢向下滚动。")
+                    Text(model.paused ? (model.unresolved ? "向上滚回已截取的内容，再点继续；也可完成并保存局部结果。" : "已暂停。准备好后点继续，再缓慢向下滚动。") : (model.unresolved ? "已保留上次确认的位置。" : "在目标窗口正文内向下滚动。"))
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                     Text(model.status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if let notice = model.automaticNotice {

@@ -5,6 +5,7 @@ public struct Coverage: Sendable, Equatable {
     public let height: Int
     public let appended: Int
     public let seams: Int
+    public let repeatedFrame: Bool
 }
 
 /// Serialized engine + immutable strips. A failed frame never mutates the confirmed ledger.
@@ -38,7 +39,15 @@ public actor CaptureSession {
                 try checkFreshness()
                 try append(frame, at: 0)
                 self.previous = frame; width = frame.width; height = frame.height
-                return Coverage(position: 0, height: height, appended: height, seams: 0)
+                return Coverage(position: 0, height: height, appended: height, seams: 0, repeatedFrame: false)
+            }
+        }
+        // A repaint of the last accepted pixels supplies no evidence of motion
+        // or recovery. Leave both the position and the immutable strips alone.
+        if frame == previous {
+            return try permit.commit {
+                try checkFreshness()
+                return Coverage(position: position, height: height, appended: 0, seams: seams, repeatedFrame: true)
             }
         }
         let motion = try Registration.estimate(previous: previous, next: frame)
@@ -56,7 +65,7 @@ public actor CaptureSession {
             if added > 0 { try append(frame.crop(y: frame.height-added, height: added), at: height) }
             position = nextPosition; height += added; self.previous = frame
             if added > 0 { seams += 1 }
-            return Coverage(position: position, height: height, appended: added, seams: seams)
+            return Coverage(position: position, height: height, appended: added, seams: seams, repeatedFrame: false)
         }
     }
     private func append(_ raster: Raster, at y: Int) throws {
@@ -78,7 +87,7 @@ public actor CaptureSession {
         return try Raster(width: width, height: h, bytes: bytes)
     }
     public func dimensions() -> (width: Int, height: Int) { (width,height) }
-    public func seal() { sealed = true; previous = nil }
+    @discardableResult public func seal() -> Int { sealed = true; previous = nil; return seams }
 
     /// A new directory is committed with a same-volume rename only after every part is encoded.
     /// Existing files/folders are never replaced. Failure removes only our unique staging directory.

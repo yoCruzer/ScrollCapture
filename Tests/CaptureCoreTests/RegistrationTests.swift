@@ -29,6 +29,33 @@ final class RegistrationTests: XCTestCase, @unchecked Sendable {
         let result = try await session.read(y: 0, height: 906)
         XCTAssertEqual(result, try viewport(at: 0, height: 906))
     }
+    func testSlowScrollOnWhiteListUsesInkBetweenSampleColumns() async throws {
+        // Independent world coordinates. Short list entries occupy a narrow column
+        // on a wide white canvas, between the old 32 horizontal sample points.
+        func list(at origin: Int, height: Int) throws -> Raster {
+            let width = 1024
+            var pixels = [UInt8](repeating: 255, count: width * height * 4)
+            for y in 0..<height {
+                let worldY = origin + y
+                for x in 0..<128 where (10..<30).contains(x % 32) && worldY % 14 < 10 {
+                    let ink = ((worldY * 1097 + x * 733) ^ (worldY * 29 + x * 31)) &* 127
+                    let index = (y * width + x) * 4
+                    for channel in 0..<3 { pixels[index + channel] = UInt8(truncatingIfNeeded: ink) }
+                }
+            }
+            return try Raster(width: width, height: height, bytes: pixels)
+        }
+        let session = try CaptureSession()
+        let positions = [0, 1, 5, 18, 19, 25, 39]
+        for origin in positions {
+            let coverage = try await session.accept(list(at: origin, height: 160))
+            XCTAssertEqual(coverage.height, origin + 160)
+        }
+        await session.seal()
+        let result = try await session.read(y: 0, height: 199)
+        XCTAssertEqual(result, try list(at: 0, height: 199))
+    }
+
     func testAmbiguousPeriodicAndSolidDoNotGuess() throws {
         XCTAssertThrowsError(try Registration.estimate(previous: viewport(at: 0, periodic: true), next: viewport(at: 32, periodic: true)))
         let solid = try Raster(width: 64, height: 160, bytes: [UInt8](repeating: 255, count: 64*160*4))

@@ -26,16 +26,24 @@ public enum Registration {
             candidates.append((dy, Double(sum)/Double(max(1,n))))
         }
         candidates.sort { $0.score < $1.score }
-        guard let best = candidates.first, best.score <= 1.5 else { throw CaptureError.noOverlap }
+        guard var best = candidates.first, best.score <= 1.5 else { throw CaptureError.noOverlap }
         let runner = candidates[1].score
-        guard runner - best.score >= 1.0 else { throw CaptureError.ambiguous }
+        if runner - best.score < 1.0 {
+            // White margins can tie at every sampled column even when the ink between
+            // them uniquely identifies the scroll. Require an exact full overlap for
+            // this fallback; the normal residual test below still excludes ALL rivals.
+            guard let exact = candidates.prefix(while: { $0.score == 0 }).first(where: {
+                let overlap = (a.height - abs($0.dy)) * a.width * 4
+                let startA = max(0, $0.dy) * a.width * 4
+                let startB = max(0, -$0.dy) * a.width * 4
+                return a.bytes[startA..<startA + overlap].elementsEqual(b.bytes[startB..<startB + overlap])
+            }) else { throw CaptureError.ambiguous }
+            best = exact
+        }
         guard abs(best.dy) <= a.height * 2 / 3 else { throw CaptureError.noOverlap }
         let aStart = max(0,best.dy), bStart = max(0,-best.dy)
         try validate(a, y: aStart, b, y: bStart, rows: a.height - abs(best.dy))
-        // Sampling cannot prove exclusion: a narrow unique marker can be oversampled or missed.
-        // Reject if ANY other observable displacement passes the same independent full validator.
-        // Most alternatives stop at the first mismatching row; periodic/blank cases stop on a tie.
-        for other in candidates.dropFirst() {
+        for other in candidates where other.dy != best.dy {
             if (try? validate(a,y:max(0,other.dy),b,y:max(0,-other.dy),rows:a.height-abs(other.dy))) != nil {
                 throw CaptureError.ambiguous
             }

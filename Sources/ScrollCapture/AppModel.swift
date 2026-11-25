@@ -49,6 +49,7 @@ final class AppModel: ObservableObject {
     private var lastTime = -Double.infinity
     private var resumeTime = -Double.infinity
     private var lastSequence: UInt64 = 0
+    private var overlapDeadline: Double?
     private var metadata: (CGRect, Double, Double)?
     private var watchdog: Task<Void,Never>?
     @Published private(set) var streamEnded = false
@@ -65,6 +66,7 @@ final class AppModel: ObservableObject {
         let width = sealedWidth > 0 ? sealedWidth : bitmap?.width ?? 0
         let dimensions = "\(width) × \(resultHeight) px"
         guard session != nil else { return "\(dimensions) · 单张截图" }
+        if seams == 0 { return "\(dimensions) · 仅截到首屏（0 次拼接）。" }
         return "\(dimensions) · \(unresolved ? "仅包含已确认的部分内容" : "本次采集的连续范围")。结束采集不代表到达文档底部。"
     }
     func openScreenRecordingSettings() {
@@ -150,7 +152,7 @@ final class AppModel: ObservableObject {
                   let window = fresh.first(where: { $0.windowID == snapshotWindow.windowID }),
                   window.owningApplication?.processID == owner, window.frame == snapshotWindow.frame else { throw CaptureError.geometryChanged }
             let engine = try CaptureSession(); let live = try LiveStream(window:window)
-            source = live; session = engine; resumeTime = -.infinity; lastTime = -Double.infinity; lastSequence = 0; metadata = nil
+            source = live; session = engine; resumeTime = -.infinity; lastTime = -Double.infinity; lastSequence = 0; metadata = nil; overlapDeadline = nil
             try await live.start()
             guard token == generation else { await live.stop(); return }
             streamEnded = false; running = true; paused = false; unresolved = false; selecting = false; confirmedHeight = 0; seams = 0
@@ -189,17 +191,18 @@ final class AppModel: ObservableObject {
                         self.lastTime = frame.time
                         let dropped = self.lastSequence > 0 && frame.sequence != self.lastSequence + 1
                         self.lastSequence = frame.sequence
-                        if self.paused || frame.time < self.resumeTime { continue }
+                        let now = CMClockGetTime(CMClockGetHostTimeClock()).seconds
+                        if frame.time < self.resumeTime || !self.canInspectFrame(at: now) { continue }
                         if dropped {
                             self.stopAutomatic()
-                            self.permit.invalidate(); self.permit = CommitPermit(); self.attempt += 1
-                            self.paused = true; self.unresolved = true
-                            self.status = "处理队列丢帧，连续性需要重新确认；请回滚补采后继续。"
+                            self.unresolved = true
+                            self.paused = true
+                            self.status = "处理队列丢帧，已暂停。请回滚到已截内容后继续。"
                             continue
                         }
                         if CMClockGetTime(CMClockGetHostTimeClock()).seconds - frame.time > 1.5 {
-                            self.paused = true; self.unresolved = true; self.stopAutomatic()
-                            self.status = "画面已过期，已暂停；请回滚到可信位置再继续。"; continue
+                            self.handleFrameFailure(CaptureError.staleFrame)
+                            continue
                         }
                         let frameAttempt = self.attempt, framePermit = self.permit
                         do {
@@ -213,25 +216,20 @@ final class AppModel: ObservableObject {
                                 guard metadata.0 == frame.contentRect, metadata.1 == frame.scale, metadata.2 == frame.contentScale else { throw CaptureError.geometryChanged }
                             } else { self.metadata = (frame.contentRect,frame.scale,frame.contentScale) }
                             let cropped = try self.cropped(frame.raster,region:frozenRegion)
+                            let deadline = self.overlapDeadline
                             let coverage = try await engine.accept(cropped,permit:framePermit, checkFreshness: {
-                                guard CMClockGetTime(CMClockGetHostTimeClock()).seconds - frame.time <= 1.5 else {
+                                let commitTime = CMClockGetTime(CMClockGetHostTimeClock()).seconds
+                                guard commitTime - frame.time <= 1.5, commitTime < (deadline ?? .infinity) else {
                                     throw CaptureError.staleFrame
                                 }
                             })
                             guard token == self.generation, !Task.isCancelled else { break }
                             guard frameAttempt == self.attempt, !self.paused else { continue }
-                            self.confirmedHeight = coverage.height; self.seams = coverage.seams
-                            // SCK presentation timestamps use the host monotonic clock; a pre-input
-                            // frame processed late must not authorize the next automatic input.
-                            if coverage.appended > 0 { self.acceptedAt = frame.time }
-                            self.bitmap = cropped
-                            self.unresolved = false
-                            self.status = coverage.appended > 0 ? "已验证新增 \(coverage.appended) px；继续缓慢滚动。" : "画面已定位，尚无新增覆盖；静止不表示到底。"
+                            self.showCoverage(coverage, frame: cropped, time: frame.time)
                         } catch {
                             guard token == self.generation else { break }
                             guard frameAttempt == self.attempt else { continue }
-                            self.paused = true; self.unresolved = true; self.status = error.localizedDescription
-                            self.stopAutomatic()
+                            self.handleFrameFailure(error)
                         }
                     }
                 } catch {
@@ -250,11 +248,50 @@ final class AppModel: ObservableObject {
             await oldSource?.stop()
         }
     }
+    func canInspectFrame(at now: Double) -> Bool {
+        guard !paused else { return false }
+        if let overlapDeadline, now >= overlapDeadline {
+            paused = true
+            status = "未能及时找回唯一重叠，已暂停。请回滚到已截内容后继续。"
+            return false
+        }
+        return true
+    }
+
+    func handleFrameFailure(_ error: Error, now: Double = CMClockGetTime(CMClockGetHostTimeClock()).seconds) {
+        stopAutomatic()
+        unresolved = true
+        switch error as? CaptureError {
+        case .ambiguous, .noOverlap:
+            if overlapDeadline == nil { overlapDeadline = now + 2 }
+            status = "当前重叠不确定，长度已冻结。请稍微回滚，正在尝试重新匹配。"
+        default:
+            paused = true
+            status = error.localizedDescription
+        }
+    }
+
+    func showCoverage(_ coverage: Coverage, frame: Raster, time: Double) {
+        guard !coverage.repeatedFrame else { return }
+        overlapDeadline = nil
+        confirmedHeight = coverage.height
+        seams = coverage.seams
+        bitmap = frame
+        unresolved = false
+        if coverage.appended > 0 { acceptedAt = time }
+        if coverage.seams == 0 {
+            status = "已截首屏。请在目标正文上滚动；若“预览”已显示整张长图，请先放大到实际大小再开始。"
+        } else {
+            status = coverage.appended > 0 ? "已验证新增 \(coverage.appended) px；继续向下滚动。" : "画面已定位，尚无新增覆盖。"
+        }
+    }
+
     func togglePause() {
         guard running, !gateRunning, !streamEnded else { return }
         stopAutomatic()
         permit.invalidate(); permit = CommitPermit(); attempt += 1
         if paused {
+            overlapDeadline = nil
             resumeTime = CMClockGetTime(CMClockGetHostTimeClock()).seconds
             recoveryAttempts += 1
             guard recoveryAttempts <= 32 else { status = "达到 32 次恢复上限，请完成并保存当前结果。"; return }
@@ -272,16 +309,19 @@ final class AppModel: ObservableObject {
         await oldSource?.stop()
         guard token == generation else { return }
         source = nil
-        await session.seal()
+        let finalSeams = await session.seal()
         do {
             let size = await session.dimensions()
             guard token == generation else { return }
             guard size.height > 0 else { throw CaptureError.invalidImage }
+            seams = finalSeams
+            if finalSeams == 0 { unresolved = true }
             sealedWidth = size.width; confirmedHeight = size.height
             let preview = try await session.read(y:0,height:Raster.previewRows(width: size.width, height: size.height))
             guard token == generation else { return }
             bitmap = preview; selecting = false; confirmedHeight = size.height
             status = "\(unresolved ? "局部结果 · 未确认尾部" : "连续采集 · 用户结束（未确认文档尾部）") · \(size.width) × \(size.height) px\(preview.height < size.height ? "；预览仅显示首片，保存包含全部分片" : "")"
+            if finalSeams == 0 { status = "仅截到首屏（0 次拼接）。可保存首屏，或重新框选能滚动的正文。" }
             if limitReached { status = "达到 10 分钟上限。" + status }
         } catch { if token == generation { status = sealedWidth > 0 ? "预览读取失败，已确认的内容仍可尝试保存：" + error.localizedDescription : error.localizedDescription; bitmap = nil } }
         guard token == generation else { return }
