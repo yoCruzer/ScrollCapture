@@ -108,3 +108,10 @@
 `bash Scripts/build-app.sh`、`bash Scripts/build-app.sh intel`，解压交付 ZIP 后 `codesign --verify --strict`、`file`、`xcrun vtool -show-build` 通过。新版实际 App 启动，当前机器提示需重新授予录屏权限。当前实测与未测边界以 STATUS 为准。
 
 Owner 重新授权并经系统重新启动同一 clean App 后，真实系统「预览」白底长图实测通过。选区 588×741，从第 1 次到第 13 次拼接每次新增 73 px，保存 588×1690。执行 `swift Scripts/compare-images.swift artifacts/preview-first-screen/preview-fixed.png artifacts/preview-first-screen/article.png 56 2618 588 1690` 得到 0 坏行，最大通道误差 0。故意跳过约两个视口后，814 px 的边界冻结并进入暂停；回滚继续后再增至 887 px，第二次 GUI 导出与原图同一位置逐字节相符。独立复核记录见 REVIEW。本机手动候选恢复 READY_FOR_OWNER_DEVICE_GATE。
+
+
+## 2026-11-26 公开测试下载页
+
+在 [ixyzero.com/scrollcapture/](https://ixyzero.com/scrollcapture/) 发布原样的 `2ec9950` arm64 / x86_64 ZIP、SHA-256 清单和合成白底编号 PNG。页面包含安装与录屏授权、「预览」首屏回归、缺口暂停与回滚补采、保存和反馈步骤。沿用原有直接下载与分段下载入口。此次部署仅替换 ScrollCapture 首页并添加四个版本化静态文件，旧首页已在源站备份。
+
+在本机通过公网 `curl` 验证首页、校验清单和 PNG 与发布输入逐字节一致。两份 ZIP 各一次完整下载 HTTP 200，349772 / 378926 字节，SHA-256 与构建一致。每份 ZIP 的两次 Range 请求均返回 HTTP 206 和预期 Content-Range，重组与完整 ZIP 一致。发布输入解压后验证 `codesign --verify --strict` 和构建标记。此轮仅发布站点文件，未重新运行产品回归或跨设备安装。
