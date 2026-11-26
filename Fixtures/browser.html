@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>ScrollCapture Synthetic Browser Fixture</title>
+<style>
+html{scroll-behavior:auto;background:white}body{margin:0;width:760px;font:16px monospace}
+canvas{display:block;width:760px;height:6000px}#instructions{height:120px;box-sizing:border-box;padding:16px;background:#eef4ff}
+</style>
+<div id="instructions">ScrollCapture 非敏感合成浏览器验收<br>框选下方正文，排除浏览器工具栏与滚动条。<br><button onclick="saveOracle()">保存独立真值 PNG</button>　<span id="position">scrollY=0</span></div>
+<canvas width="760" height="6000" id="fixture"></canvas>
+<script>
+'use strict';
+const canvas=document.getElementById('fixture'), c=canvas.getContext('2d',{alpha:false});
+for(let y=0;y<6000;y++){
+  const row=Math.floor(y/24);
+  c.fillStyle=`rgb(${(row*37)%193},${(row*71+41)%191},${(row*23+97)%197})`;
+  c.fillRect(0,y,760,1);
+  // Unique pixel ruler, outside the text: exact integer position independent of app matching.
+  for(let x=600;x<760;x+=4){let v=Math.imul((y*1097+x*733+17)^((y*1097+x*733+17)>>>7),0x9e3779b9)>>>0;
+    c.fillStyle=`rgb(${v&255},${(v>>>12)&255},${(v>>>24)&255})`;c.fillRect(x,y,4,1);}
+}
+c.font='14px monospace';c.textBaseline='top';c.fillStyle='white';
+for(let row=0;row<250;row++) c.fillText(`ROW ${String(row).padStart(3,'0')}  ScrollCapture  ${row%7===0?'合法重复内容':'独立行标识'}`,12,row*24+4);
+// Download remains a user action; no data leaves this page.
+window.saveOracle=()=>{const a=document.createElement('a');a.download='browser-oracle.png';a.href=canvas.toDataURL('image/png');a.click()};
+addEventListener('scroll',()=>document.getElementById('position').textContent='scrollY='+scrollY,{passive:true});
+</script>
+</html>
